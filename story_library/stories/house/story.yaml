@@ -1,0 +1,13 @@
+story_id: house
+version: 2
+
+title:
+  en: House
+  zh: 房子
+
+spoken_word:
+  en: House
+  zh: 房子
+
+trigger_objects:
+  - house

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Generate pack · Story Voice Pipeline{% endblock %}
+{% block content %}
+  <section class="narrow">
+    <p class="eyebrow">Step 2</p>
+    <h1>Generate a story pack</h1>
+    {% if not voices %}
+      <p class="notice">Add a voice before creating a generation job.</p>
+    {% else %}
+      <form action="/jobs/new" method="post">
+        <label>Voice
+          <select name="voice_id" required>
+          {% for voice in voices %}<option value="{{ voice.id }}">{{ voice.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <fieldset>
+          <legend>Stories</legend>
+          {% for story in library.stories %}
+            <label class="check"><input type="checkbox" name="story" value="{{ story.story_id }}" checked> {{ story.title.values()|join(" / ") }}</label>
+          {% endfor %}
+        </fieldset>
+        <fieldset>
+          <legend>Languages</legend>
+          {% for language, name in language_names.items() %}
+            <label class="check"><input type="checkbox" name="language" value="{{ language }}"{% if language in library.required_languages %} checked{% else %} disabled{% endif %}> {{ name }}{% if language not in library.required_languages %} — translation not installed{% endif %}</label>
+          {% endfor %}
+          <p class="hint">A language becomes selectable when every story has its title and text translation in the active library.</p>
+        </fieldset>
+        <button type="submit">Start generation</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Prepare Qwen reference · Story Voice Pipeline{% endblock %}
+{% block content %}
+  <section class="narrow">
+    <p class="eyebrow">Audio converter</p>
+    <h1>Prepare a Qwen reference</h1>
+    <p class="lede">Upload a clear voice recording and download a Qwen-ready reference bundle. Your audio is converted to mono 24 kHz PCM WAV and paired with its transcript.</p>
+
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+    <form action="/references/prepare" method="post" enctype="multipart/form-data">
+      <fieldset>
+        <legend>Source recording</legend>
+        <label>
+          Audio file
+          <input name="audio" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" required>
+        </label>
+        <p class="hint">MP3, M4A, WAV, FLAC, OGG and most other audio formats are accepted. A clean 10–40 second recording works best.</p>
+      </fieldset>
+
+      <label>
+        Recording language
+        <select name="language">
+          {% for code, name in languages.items() %}
+            <option value="{{ code }}"{% if (language or "en") == code %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Exact transcript
+        <textarea name="transcript" rows="7" required placeholder="Type every word spoken in the recording exactly.">{{ transcript or "" }}</textarea>
+      </label>
+      <p class="hint">The transcript is required by Qwen voice cloning and must match the recording, including hesitations or repeated words.</p>
+
+      <label class="check">
+        <input name="consent_confirmed" type="checkbox" value="true" required>
+        I confirm that I have permission to use this recording for voice cloning.
+      </label>
+
+      <button type="submit">Convert &amp; download</button>
+    </form>
+
+    <aside class="bundle-note">
+      <strong>Your download contains</strong>
+      <code>reference.wav</code> and <code>reference.txt</code>. Use these as Qwen's reference audio and reference text.
+    </aside>
+  </section>
+{% endblock %}

@@ -1,0 +1,13 @@
+story_id: dad
+version: 2
+
+title:
+  en: Dad
+  zh: 爸爸
+
+spoken_word:
+  en: Dad
+  zh: 爸爸
+
+trigger_objects:
+  - dad

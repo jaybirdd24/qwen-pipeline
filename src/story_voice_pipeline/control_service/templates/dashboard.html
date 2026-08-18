@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Story Voice Pipeline{% endblock %}
+{% block content %}
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Researcher control service</p>
+      <h1>Story-pack dashboard</h1>
+      <p>Upload a consented voice, generate the fixed bilingual library, review every file, then approve it for device synchronisation.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="/voices/new">Add a voice</a>
+      <a class="button secondary" href="/jobs/new">Generate a pack</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Voices</h2>
+    {% if voices %}
+      <div class="cards">
+      {% for voice in voices %}
+        <article class="card">
+          <h3>{{ voice.name }}</h3>
+          <p><code>{{ voice.id }}</code></p>
+          <p>English reference: {{ "%.1f"|format(voice.english_reference_duration) }} s</p>
+          {% if voice.english_reference_duration < 10 or voice.english_reference_duration > 40 %}<p class="notice">Reference is outside the preferred 10–40 second range.</p>{% endif %}
+          <p>Mandarin reference: {{ "yes" if voice.mandarin_reference_path else "English fallback" }}</p>
+        </article>
+      {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">No voices yet. Add a consented reference to begin.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Recent jobs</h2>
+    {% if jobs %}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Job</th><th>Voice</th><th>Status</th><th>Progress</th><th>Result</th></tr></thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><a href="/jobs/{{ job.id }}"><code>{{ job.id }}</code></a></td>
+            <td><code>{{ job.voice_id }}</code></td>
+            <td><span class="status {{ job.status|lower }}">{{ job.status }}</span></td>
+            <td>{{ job.completed_chunks }}/{{ job.total_chunks }}</td>
+            <td>{% if job.pack_id %}<a href="/packs/{{ job.pack_id }}/review">Review pack</a>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <p class="empty">No generation jobs yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Story packs</h2>
+    {% if packs %}
+      <div class="cards">
+      {% for pack in packs %}
+        <article class="card">
+          <span class="status {{ pack.status|lower }}">{{ pack.status }}</span>
+          <h3><code>{{ pack.id }}</code></h3>
+          <p>{{ pack.library_id }} v{{ pack.library_version }}</p>
+          <a href="/packs/{{ pack.id }}/review">Open review</a>
+        </article>
+      {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">Completed packs will appear here.</p>
+    {% endif %}
+  </section>
+{% endblock %}

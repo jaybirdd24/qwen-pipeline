@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id }} · Story Voice Pipeline{% endblock %}
+{% block head %}
+  {% if job.status in ["QUEUED", "VALIDATING_REFERENCE", "PREPARING_VOICE", "GENERATING", "CANCELLING"] %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+{% block content %}
+  <section class="narrow">
+    <p class="eyebrow">Generation job</p>
+    <h1><code>{{ job.id }}</code></h1>
+    <p><span class="status {{ job.status|lower }}">{{ job.status }}</span></p>
+    <div class="progress"><span style="width: {{ (job_data.progress * 100)|round }}%"></span></div>
+    <dl>
+      <dt>Progress</dt><dd>{{ job.completed_chunks }} of {{ job.total_chunks }} chunks</dd>
+      <dt>Current story</dt><dd>{{ job.current_story_id or "—" }}</dd>
+      <dt>Language</dt><dd>{{ job.current_language or "—" }}</dd>
+      <dt>Current chunk</dt><dd>{{ job.current_chunk or "—" }}</dd>
+      <dt>Started</dt><dd>{{ job_data.started_at or "Waiting" }}</dd>
+      <dt>Elapsed</dt><dd>{% if job_data.elapsed_seconds is not none %}{{ "%.1f"|format(job_data.elapsed_seconds) }} s{% else %}—{% endif %}</dd>
+    </dl>
+    {% if job.error_message %}<div class="error"><strong>Failure:</strong> {{ job.error_message }}</div>{% endif %}
+    {% if job.pack_id %}<a class="button" href="/packs/{{ job.pack_id }}/review">Review generated pack</a>{% endif %}
+    {% if job.status in ["FAILED", "CANCELLED"] %}<form method="post" action="/jobs/{{ job.id }}/retry"><button type="submit">Retry job</button></form>{% endif %}
+    {% if job.status in ["QUEUED", "VALIDATING_REFERENCE", "PREPARING_VOICE", "GENERATING"] %}<form method="post" action="/jobs/{{ job.id }}/cancel"><button type="submit" class="danger">Cancel job</button></form>{% endif %}
+  </section>
+{% endblock %}

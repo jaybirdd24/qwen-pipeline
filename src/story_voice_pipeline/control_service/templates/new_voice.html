@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Add voice · Story Voice Pipeline{% endblock %}
+{% block content %}
+  <section class="narrow">
+    <p class="eyebrow">Step 1</p>
+    <h1>Add a caregiver voice</h1>
+    <p>Use only recordings you have permission to clone. The transcript must match the recording exactly.</p>
+    <form action="/voices/new" method="post" enctype="multipart/form-data">
+      <label>Voice name<input name="name" required maxlength="200"></label>
+      <fieldset>
+        <legend>English reference</legend>
+        <label>Audio<input name="english_audio" type="file" accept="audio/*,.wav,.m4a" required></label>
+        <label>Exact transcript<textarea name="english_transcript" rows="7" required></textarea></label>
+      </fieldset>
+      <fieldset>
+        <legend>Optional Mandarin reference</legend>
+        <label>Audio<input name="mandarin_audio" type="file" accept="audio/*,.wav,.m4a"></label>
+        <label>Exact transcript<textarea name="mandarin_transcript" rows="5"></textarea></label>
+        <p class="hint">If omitted, Mandarin generation uses the English reference and records the fallback.</p>
+      </fieldset>
+      <label>Notes<textarea name="notes" rows="3"></textarea></label>
+      <label class="check"><input name="consent_confirmed" type="checkbox" value="true" required> I confirm consent to store and clone this voice.</label>
+      <button type="submit">Save voice</button>
+    </form>
+  </section>
+{% endblock %}

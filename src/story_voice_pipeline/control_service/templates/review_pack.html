@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Review {{ pack.id }} · Story Voice Pipeline{% endblock %}
+{% block content %}
+  <section>
+    <p class="eyebrow">Step 3</p>
+    <h1>Review story pack</h1>
+    <p><code>{{ pack.id }}</code> <span class="status {{ pack.status|lower }}">{{ pack.status }}</span></p>
+    <p>Listen to every file before approval. Only approved packs are exposed through device synchronisation routes.</p>
+    <div class="audio-grid">
+      {% for audio in audios %}
+        <article class="card">
+          <h2>{{ audio.story_id }} · {{ language_names[audio.language] }} · {{ "Word" if "/word/" in audio.audio_path else "Story" }}</h2>
+          <audio controls preload="none" src="/review-files/{{ pack.id }}/{{ audio.audio_path }}"></audio>
+          <dl>
+            <dt>Duration</dt><dd>{{ "%.2f"|format(audio.duration_seconds) }} s</dd>
+            <dt>Generation</dt><dd>{{ "%.2f"|format(audio.generation_seconds) }} s</dd>
+            <dt>RTF</dt><dd>{{ "%.3f"|format(audio.real_time_factor) }}</dd>
+            <dt>Validation</dt><dd>{{ audio.validation_status }}</dd>
+          </dl>
+          {% if audio.warnings_json != "[]" %}<p class="notice">{{ audio.warnings_json }}</p>{% endif %}
+        </article>
+      {% endfor %}
+    </div>
+    {% if pack.status == "READY_FOR_REVIEW" %}
+      <div class="actions review-actions">
+        <form method="post" action="/packs/{{ pack.id }}/approve"><button type="submit">Approve pack</button></form>
+        <form method="post" action="/packs/{{ pack.id }}/reject"><button type="submit" class="danger">Reject pack</button></form>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

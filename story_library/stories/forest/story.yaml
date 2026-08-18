@@ -1,0 +1,13 @@
+story_id: forest
+version: 2
+
+title:
+  en: Forest
+  zh: 森林
+
+spoken_word:
+  en: Forest
+  zh: 森林
+
+trigger_objects:
+  - forest

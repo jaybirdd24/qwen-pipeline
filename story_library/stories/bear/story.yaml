@@ -1,0 +1,13 @@
+story_id: bear
+version: 2
+
+title:
+  en: Bear
+  zh: 小熊
+
+spoken_word:
+  en: Bear
+  zh: 熊
+
+trigger_objects:
+  - bear

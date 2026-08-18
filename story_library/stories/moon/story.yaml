@@ -1,0 +1,13 @@
+story_id: moon
+version: 2
+
+title:
+  en: Moon
+  zh: 月亮
+
+spoken_word:
+  en: Moon
+  zh: 月亮
+
+trigger_objects:
+  - moon

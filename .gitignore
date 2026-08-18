@@ -1,0 +1,42 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local configuration and secrets (keep the documented template).
+.env
+.env.*
+!.env.example
+
+# Runtime state and generated pipeline artifacts.
+data/
+ref/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Voice references and generated media.
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.mp4
+*.mov
+
+# Downloaded model weights and packaged exports.
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.tar
+*.tar.gz
+*.tgz
+*.zip

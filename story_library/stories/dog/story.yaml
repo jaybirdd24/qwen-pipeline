@@ -1,0 +1,13 @@
+story_id: dog
+version: 2
+
+title:
+  en: Dog
+  zh: 小狗
+
+spoken_word:
+  en: Dog
+  zh: 狗
+
+trigger_objects:
+  - dog

@@ -1,0 +1,13 @@
+story_id: river
+version: 2
+
+title:
+  en: River
+  zh: 河流
+
+spoken_word:
+  en: River
+  zh: 河流
+
+trigger_objects:
+  - river
