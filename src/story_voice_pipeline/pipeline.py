@@ -21,7 +21,7 @@ from .audio import (
     real_time_factor,
     validate_wav,
 )
-from .cache import ChunkCache, chunk_cache_key
+from .cache import CacheResult, ChunkCache, chunk_cache_key
 from .chunking import CHUNKING_VERSION, chunk_text
 from .config import MANIFEST_SCHEMA_VERSION, PipelineConfig
 from .engines.base import TTSEngine
@@ -342,6 +342,96 @@ class StoryPackGenerator:
             generated_chunks,
         )
 
+    def _generate_chunk_batch(
+        self,
+        run_root: Path,
+        jobs: list[tuple[str, Path, dict[str, Any]]],
+        results: dict[str, CacheResult],
+    ) -> None:
+        """Commit validated chunks immediately, splitting failures without losing successes."""
+        if not jobs:
+            return
+        language = jobs[0][2]["language"]
+        reference_language = jobs[0][2]["reference_language"]
+        assert all(
+            payload["language"] == language and payload["reference_language"] == reference_language
+            for _, _, payload in jobs
+        )
+        batch_id = uuid.uuid4().hex
+        started = time.perf_counter()
+        failure = None
+        try:
+            if len(jobs) == 1:
+                _, output, payload = jobs[0]
+                self.engine.generate(payload["text"], language, reference_language, output)
+            else:
+                self.engine.generate_batch(
+                    [payload["text"] for _, _, payload in jobs],
+                    language,
+                    reference_language,
+                    [output for _, output, _ in jobs],
+                )
+        except RuntimeError as exc:
+            failure = str(exc)
+        elapsed = time.perf_counter() - started
+        self._record_event(
+            run_root,
+            "batch_finished",
+            batch_id=batch_id,
+            batch_size=len(jobs),
+            language=language,
+            reference_language=reference_language,
+            cache_keys=[key for key, _, _ in jobs],
+            batch_wall_seconds=elapsed,
+            error=failure,
+        )
+        retry = []
+        for position, (key, output, payload) in enumerate(jobs):
+            try:
+                if failure is not None:
+                    raise EngineError(failure)
+                results[key] = self.cache.put(
+                    key,
+                    output,
+                    {
+                        **payload,
+                        "text_length": len(payload["text"]),
+                        "generation_seconds": elapsed / len(jobs),
+                        "batch_id": batch_id,
+                        "batch_size": len(jobs),
+                        "batch_index": position,
+                        "batch_wall_seconds": elapsed,
+                        "generation_time_allocation": "equal_share",
+                    },
+                )
+            except (AudioValidationError, EngineError) as exc:
+                retry.append((key, output, payload))
+                failure_reason = str(exc)
+                self._record_event(
+                    run_root,
+                    "batch_chunk_rejected",
+                    batch_id=batch_id,
+                    cache_key=key,
+                    chunk_index=payload.get("chunk_index"),
+                    language=language,
+                    reason=failure_reason,
+                )
+            finally:
+                output.unlink(missing_ok=True)
+        if retry:
+            if len(jobs) == 1:
+                raise EngineError(failure_reason)
+            # Try both halves even if an individual chunk remains irrecoverable.
+            midpoint = max(1, len(retry) // 2)
+            errors = []
+            for smaller in (retry[:midpoint], retry[midpoint:]):
+                try:
+                    self._generate_chunk_batch(run_root, smaller, results)
+                except EngineError as exc:
+                    errors.append(str(exc))
+            if errors:
+                raise EngineError("; ".join(errors))
+
     def generate(self, request: GenerateRequest) -> GenerationResult:
         stories = self._validate_request(request)
         references = self._prepare_references(request)
@@ -422,6 +512,7 @@ class StoryPackGenerator:
             "pack_id": pack_id,
             "created_at": created_at,
             "status": "generating",
+            "qwen_batch_size": self.config.qwen_batch_size,
         }
         _write_json(request_path, state)
         self._record_event(
@@ -454,6 +545,9 @@ class StoryPackGenerator:
                     )
                     job_chunk_paths: list[Path] = []
                     chunk_metadata: list[dict[str, Any]] = []
+                    planned = []
+                    pending = []
+                    results: dict[str, CacheResult] = {}
                     for index, text in enumerate(chunks, start=1):
                         cache_payload = {
                             "cache_schema_version": 1,
@@ -478,22 +572,26 @@ class StoryPackGenerator:
                             / language
                             / f"chunk_{index:04d}.wav"
                         )
+                        planned.append((index, text, key, job_chunk, cached))
+                        if cached is None:
+                            temporary = job_chunk.with_name(f"chunk_{index:04d}.generated.wav")
+                            pending.append((key, temporary, cache_payload))
+                    failures = []
+                    for start in range(0, len(pending), self.config.qwen_batch_size):
+                        try:
+                            self._generate_chunk_batch(
+                                run_root,
+                                pending[start : start + self.config.qwen_batch_size],
+                                results,
+                            )
+                        except EngineError as exc:
+                            failures.append(str(exc))
+                    if failures:
+                        raise EngineError("; ".join(failures))
+                    for index, text, key, job_chunk, cached in planned:
                         if cached is None:
                             generated_chunks += 1
-                            temporary = job_chunk.with_name(f"chunk_{index:04d}.generated.wav")
-                            generation_seconds = self.engine.generate(
-                                text, language, reference_language, temporary
-                            )
-                            cached = self.cache.put(
-                                key,
-                                temporary,
-                                {
-                                    **cache_payload,
-                                    "text_length": len(text),
-                                    "generation_seconds": generation_seconds,
-                                },
-                            )
-                            temporary.unlink(missing_ok=True)
+                            cached = results[key]
                             self._record_event(
                                 run_root,
                                 "chunk_generated",
@@ -604,6 +702,7 @@ class StoryPackGenerator:
                 },
                 "generation": {
                     "generation_version": 2,
+                    "qwen_batch_size": self.config.qwen_batch_size,
                     "engine": self.engine.name,
                     "model_name": self.engine.model_name,
                     "model_revision": self.engine.model_revision,

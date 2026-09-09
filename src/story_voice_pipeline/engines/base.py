@@ -28,5 +28,17 @@ class TTSEngine(Protocol):
     ) -> float:
         """Generate a WAV and return generation time in seconds."""
 
+    def generate_batch(
+        self,
+        texts: list[str],
+        language: str,
+        reference_language: str,
+        outputs: list[Path],
+        *,
+        max_new_tokens: int | None = None,
+        seed_offset: int = 0,
+    ) -> float:
+        """Write ordered WAVs for one language/reference pair; return total wall seconds."""
+
     def runtime_metadata(self) -> dict[str, object]:
         """Return reproducibility and hardware metadata."""

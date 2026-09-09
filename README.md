@@ -183,3 +183,47 @@ Pi synchronisation package, ASR quality scoring, automatic translation, or story
 local worker creates an engine per job; a persistent HTTP GPU worker is Phase 3. Peak
 normalization is used instead of perceptual loudness normalization, and duration checks are
 warnings based on broad heuristics.
+
+### GPU batch generation
+
+Set `QWEN_BATCH_SIZE=2` (or `4`), or pass `--qwen-batch-size 2` to
+`story-pipeline generate`. The default is `1`. The control service also reads
+`QWEN_BATCH_SIZE`. Environment files must be loaded by your shell/service.
+On the production Nectar Tesla T4, **keep `QWEN_DTYPE=float32` and use
+`--dtype float32`**; batching does not change model precision.
+
+One loaded Qwen model processes lists of uncached story chunks, grouped within
+one story and output/reference language pair. Word clips retain their individual
+candidate retries. Failed batches split into smaller batches, down to individual
+chunks with the existing generation retries. Valid chunks are cached immediately;
+an irrecoverable chunk marks the run failed, and `--resume` reuses saved chunks.
+
+Batch size is excluded from cache keys and resume fingerprints, so existing cache
+entries remain reusable when tuning it. Sampling can produce different audio for
+fresh generations at different batch sizes; byte-identical Qwen output across
+batch sizes is not promised. Manifests record the requested size, and new chunk
+metadata records batch ID, actual size, position, total wall time, and an equal
+share of that time as `generation_seconds`. `batch_finished` events in
+`jobs/<run-id>/logs/generation.jsonl` include failed attempts too; sum their
+`batch_wall_seconds` for total story inference time including fallback overhead.
+
+Compare uncached sizes 1, 2, and 4 on the GPU:
+
+```bash
+story-pipeline benchmark \
+  --reference-audio reference.wav \
+  --reference-transcript-file reference.txt \
+  --text-file story_library/stories/forest/en.txt \
+  --max-chunk-characters 80 \
+  --dtype float32 --max-new-tokens 600 \
+  --output-dir data/benchmark
+```
+
+Use enough text for at least four chunks. The command loads one model, prepares
+one English reference, warms up each batch size, then measures the same text
+without cache reuse. JSON output and `benchmark.json` report wall seconds,
+total audio seconds, effective RTF (wall/audio; lower is better), and peak CUDA
+allocated bytes including model memory. CUDA is synchronized around measurements;
+loading, prompt preparation, warmup and validation are excluded. Benchmark failures
+are reported without silently falling back, so a size that exceeds GPU memory is
+visible. Failed sizes produce exit code 2, and other sizes are still attempted.

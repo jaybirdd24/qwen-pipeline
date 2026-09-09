@@ -183,3 +183,154 @@ def test_completed_run_cannot_be_overwritten(project: Path) -> None:
         StoryPackGenerator(config, FakeTTSEngine()).generate(
             request(project, run_id=run_id, resume=True)
         )
+
+
+@pytest.mark.parametrize("size", [1, 2, 4])
+def test_batch_pipeline_cache_order_and_language_groups(project: Path, size: int) -> None:
+    from dataclasses import replace
+
+    class RecordingEngine(FakeTTSEngine):
+        def __init__(self):
+            super().__init__()
+            self.batches = []
+
+        def generate_batch(self, texts, language, reference_language, outputs, **kwargs):
+            self.batches.append((list(texts), language, reference_language))
+            return super().generate_batch(texts, language, reference_language, outputs, **kwargs)
+
+    config = PipelineConfig(
+        output_root=project / "data", max_chunk_characters=60, qwen_batch_size=size
+    )
+    engine = RecordingEngine()
+    first = StoryPackGenerator(config, engine).generate(request(project))
+    manifest = load_manifest(first.manifest_path)
+    from story_voice_pipeline.chunking import chunk_text
+
+    library = request(project).library
+    for entry, story in zip(manifest["stories"], library.stories, strict=True):
+        for language, audio in entry["audio"].items():
+            assert [c["text"] for c in audio["chunks"]] == chunk_text(
+                story.texts[language], language, 60
+            )
+            assert all(c["batch_size"] <= size for c in audio["chunks"])
+            assert all(c["reference_language"] == "en" for c in audio["chunks"])
+    if size > 1:
+        assert any(len(texts) == size for texts, _, _ in engine.batches)
+    else:
+        assert engine.batches == []
+    assert all(ref == "en" and lang in {"en", "zh"} for _, lang, ref in engine.batches)
+    # Changing scheduling must reuse every original cache key and hash.
+    second = StoryPackGenerator(replace(config, qwen_batch_size=4), RecordingEngine()).generate(
+        request(project)
+    )
+    assert second.generated_chunks == 0
+    assert second.cache_hits == first.generated_chunks
+    second_manifest = load_manifest(second.manifest_path)
+    for left, right in zip(manifest["stories"], second_manifest["stories"], strict=True):
+        for language in left["audio"]:
+            assert left["audio"][language]["sha256"] == right["audio"][language]["sha256"]
+    # One missing middle chunk must be generated alone, preserving surrounding hits.
+    chunk = manifest["stories"][0]["audio"]["en"]["chunks"][1]
+    cache = StoryPackGenerator(config, engine).cache
+    cache.paths(chunk["cache_key"])[0].unlink()
+    engine.batches.clear()
+    third = StoryPackGenerator(config, engine).generate(request(project))
+    assert third.generated_chunks == 1
+    assert third.cache_hits == first.generated_chunks - 1
+    assert engine.batches == []
+
+
+def test_batch_failure_splits_and_keeps_valid_siblings(project: Path) -> None:
+    from story_voice_pipeline.errors import EngineError
+
+    class LimitedEngine(FakeTTSEngine):
+        def __init__(self):
+            super().__init__()
+            self.sizes = []
+
+        def generate_batch(self, texts, language, reference_language, outputs, **kwargs):
+            self.sizes.append(len(texts))
+            if len(texts) > 2:
+                raise EngineError("simulated CUDA out of memory")
+            return super().generate_batch(texts, language, reference_language, outputs, **kwargs)
+
+    config = PipelineConfig(
+        output_root=project / "data", max_chunk_characters=60, qwen_batch_size=4
+    )
+    engine = LimitedEngine()
+    result = StoryPackGenerator(config, engine).generate(request(project))
+    assert 4 in engine.sizes and 2 in engine.sizes
+    events = [
+        json.loads(line)
+        for line in (config.output_root / "jobs" / result.run_id / "logs/generation.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    batches = [event for event in events if event["event"] == "batch_finished"]
+    assert any(event["error"] for event in batches)
+    assert all(event["batch_wall_seconds"] >= 0 for event in batches)
+    assert result.manifest_path.exists()
+
+
+def test_invalid_batch_chunk_retries_only_bad_output(project: Path) -> None:
+    from story_voice_pipeline.cache import chunk_cache_key
+
+    class InvalidOutputEngine(FakeTTSEngine):
+        def __init__(self):
+            super().__init__()
+            self._references.add("en")
+            self.singles = []
+
+        def generate(self, text, language, reference_language, output, **kwargs):
+            self.singles.append(text)
+            return super().generate(text, language, reference_language, output, **kwargs)
+
+        def generate_batch(self, texts, language, reference_language, outputs, **kwargs):
+            for text, output in zip(texts, outputs, strict=True):
+                FakeTTSEngine.generate(self, text, language, reference_language, output)
+            sf.write(outputs[1], np.zeros(24000), 24000)
+            return 0.1
+
+    engine = InvalidOutputEngine()
+    generator = StoryPackGenerator(PipelineConfig(output_root=project / "data"), engine)
+    jobs = []
+    for i in range(4):
+        payload = {"text": f"Text {i}.", "language": "en", "reference_language": "en"}
+        jobs.append((chunk_cache_key(payload), project / f"{i}.wav", payload))
+    results = {}
+    generator._generate_chunk_batch(project / "run", jobs, results)
+    assert len(results) == 4
+    assert engine.singles == ["Text 1."]
+    assert all(generator.cache.get(key) is not None for key, _, _ in jobs)
+
+
+def test_irrecoverable_chunk_still_caches_siblings(project: Path) -> None:
+    from story_voice_pipeline.errors import EngineError
+
+    class FailingEngine(FakeTTSEngine):
+        def __init__(self):
+            super().__init__()
+            self._references.add("en")
+
+        def generate_batch(self, *args, **kwargs):
+            raise EngineError("batch failed")
+
+        def generate(self, text, *args, **kwargs):
+            if text == "bad":
+                raise EngineError("bad chunk")
+            return super().generate(text, *args, **kwargs)
+
+    generator = StoryPackGenerator(PipelineConfig(output_root=project / "data"), FailingEngine())
+    jobs = [
+        (
+            str(i) * 64,
+            project / f"{i}.wav",
+            {"text": text, "language": "en", "reference_language": "en"},
+        )
+        for i, text in enumerate(["bad", "Good two.", "Good three.", "Good four."])
+    ]
+    results = {}
+    with pytest.raises(EngineError, match="bad chunk"):
+        generator._generate_chunk_batch(project / "run", jobs, results)
+    assert len(results) == 3
+    assert all(generator.cache.get(key) is not None for key, _, _ in jobs[1:])
