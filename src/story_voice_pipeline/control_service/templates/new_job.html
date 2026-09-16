@@ -24,7 +24,7 @@
           {% for language, name in language_names.items() %}
             <label class="check"><input type="checkbox" name="language" value="{{ language }}"{% if language in library.required_languages %} checked{% else %} disabled{% endif %}> {{ name }}{% if language not in library.required_languages %} — translation not installed{% endif %}</label>
           {% endfor %}
-          <p class="hint">A language becomes selectable when every story has its title and text translation in the active library.</p>
+          <p class="hint">A language becomes selectable when every story has its title, spoken word, and text translation in the active library.</p>
         </fieldset>
         <button type="submit">Start generation</button>
       </form>

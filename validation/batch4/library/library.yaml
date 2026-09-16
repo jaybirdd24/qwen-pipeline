@@ -1,0 +1,4 @@
+library_id: batch4_validation
+version: 1
+required_languages: [en, zh]
+stories: [lantern]

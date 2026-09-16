@@ -1,15 +1,18 @@
 library_id: starter_samples
-version: 3
-
+version: 4
 required_languages:
-  - en
-  - zh
-
+- en
+- zh
+- ja
+- ko
+- de
+- pt
+- es
 stories:
-  - forest
-  - dad
-  - moon
-  - dog
-  - river
-  - house
-  - bear
+- forest
+- dad
+- moon
+- dog
+- river
+- house
+- bear

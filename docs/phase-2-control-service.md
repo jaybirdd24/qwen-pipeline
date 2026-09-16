@@ -36,9 +36,10 @@ Open <http://127.0.0.1:8000>. The workflow is:
 
 ## Languages
 
-The control service supports English (`en`), Mandarin Chinese (`zh`), Spanish (`es`), French
-(`fr`), and German (`de`). The generation form only displays languages for which the active story
-library has a complete translation. To enable one, add its code to `required_languages` in
+The control service supports English (`en`), Mandarin Chinese (`zh`), Japanese (`ja`),
+Korean (`ko`), German (`de`), Portuguese (`pt`), Spanish (`es`), and French (`fr`).
+The bundled library includes all of these except French. The generation form enables
+only languages for which the active story library has a complete translation. To enable one, add its code to `required_languages` in
 `library.yaml`, add its title and `spoken_word` to every `story.yaml`, and add a non-empty
 `<code>.txt` to every story
 directory. An API request for an incomplete language is rejected before a GPU job starts.

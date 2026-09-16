@@ -1,13 +1,20 @@
 story_id: forest
-version: 2
-
+version: 3
 title:
   en: Forest
   zh: 森林
-
+  ja: 森
+  ko: 숲
+  de: Wald
+  pt: Floresta
+  es: Bosque
 spoken_word:
   en: Forest
   zh: 森林
-
+  ja: 森
+  ko: 숲
+  de: Wald
+  pt: Floresta
+  es: Bosque
 trigger_objects:
-  - forest
+- forest

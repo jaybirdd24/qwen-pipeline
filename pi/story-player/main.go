@@ -278,10 +278,10 @@ func verifyBundle(bundle string) error {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: story-player -bundle PATH <list|select|resolve|play|resolve-word|play-word|verify> [arguments]")
 	fmt.Fprintln(os.Stderr, "  select VOICE_ID")
-	fmt.Fprintln(os.Stderr, "  resolve TRIGGER en|zh")
-	fmt.Fprintln(os.Stderr, "  play TRIGGER en|zh")
-	fmt.Fprintln(os.Stderr, "  resolve-word TRIGGER en|zh")
-	fmt.Fprintln(os.Stderr, "  play-word TRIGGER en|zh")
+	fmt.Fprintln(os.Stderr, "  resolve TRIGGER LANGUAGE")
+	fmt.Fprintln(os.Stderr, "  play TRIGGER LANGUAGE")
+	fmt.Fprintln(os.Stderr, "  resolve-word TRIGGER LANGUAGE")
+	fmt.Fprintln(os.Stderr, "  play-word TRIGGER LANGUAGE")
 }
 
 func run() error {
@@ -303,8 +303,8 @@ func run() error {
 		}
 		return selectVoice(*bundle, args[1])
 	case "resolve", "play", "resolve-word", "play-word":
-		if len(args) != 3 || (args[2] != "en" && args[2] != "zh") {
-			return fmt.Errorf("%s requires TRIGGER and en|zh", args[0])
+		if len(args) != 3 {
+			return fmt.Errorf("%s requires TRIGGER and LANGUAGE", args[0])
 		}
 		word := args[0] == "resolve-word" || args[0] == "play-word"
 		path, audio, err := resolve(*bundle, args[1], args[2], word)

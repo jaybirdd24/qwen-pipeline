@@ -100,7 +100,14 @@ def test_qwen_accepts_word_token_limit_and_seed_offset(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("language", "qwen_language"),
-    [("es", "Spanish"), ("fr", "French"), ("de", "German")],
+    [
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("pt", "Portuguese"),
+    ],
 )
 def test_qwen_maps_control_language_codes(
     tmp_path: Path, language: str, qwen_language: str
@@ -113,7 +120,21 @@ def test_qwen_maps_control_language_codes(
 
 
 @pytest.mark.parametrize("size", [1, 2, 4])
-def test_qwen_batch_uses_one_call_and_preserves_order(tmp_path: Path, size: int) -> None:
+@pytest.mark.parametrize(
+    "language, qwen_language",
+    [
+        ("zh", "Chinese"),
+        ("en", "English"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("de", "German"),
+        ("pt", "Portuguese"),
+        ("es", "Spanish"),
+    ],
+)
+def test_qwen_batch_uses_one_call_and_preserves_order(
+    tmp_path: Path, size: int, language: str, qwen_language: str
+) -> None:
     tts = engine(0)
     calls = []
     prompt = [object()]
@@ -128,10 +149,10 @@ def test_qwen_batch_uses_one_call_and_preserves_order(tmp_path: Path, size: int)
 
     tts._model = BatchModel()
     paths = [tmp_path / f"{i}.wav" for i in range(size)]
-    assert tts.generate_batch([f"Text {i}" for i in range(size)], "zh", "en", paths) >= 0
+    assert tts.generate_batch([f"Text {i}" for i in range(size)], language, "en", paths) >= 0
     assert len(calls) == 1
     assert calls[0]["voice_clone_prompt"] is prompt
-    assert calls[0]["language"] == (["Chinese"] * size if size > 1 else "Chinese")
+    assert calls[0]["language"] == ([qwen_language] * size if size > 1 else qwen_language)
     assert calls[0]["text"] == ([f"Text {i}" for i in range(size)] if size > 1 else "Text 0")
     assert [sf.info(path).frames for path in paths] == [100 + i * 10 for i in range(size)]
 

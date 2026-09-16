@@ -334,3 +334,40 @@ def test_irrecoverable_chunk_still_caches_siblings(project: Path) -> None:
         generator._generate_chunk_batch(project / "run", jobs, results)
     assert len(results) == 3
     assert all(generator.cache.get(key) is not None for key, _, _ in jobs[1:])
+
+
+def test_all_seven_languages_generate_cache_and_export(project: Path) -> None:
+    from dataclasses import replace
+
+    from story_voice_pipeline.chunking import chunk_text
+    from story_voice_pipeline.pi_bundle import export_pi_bundle
+    from story_voice_pipeline.pipeline import _word_synthesis_text
+
+    config = PipelineConfig(
+        output_root=project / "multilingual", max_chunk_characters=60, qwen_batch_size=4
+    )
+    req = request(project)
+    req = replace(req, story_ids=("forest",), languages=req.library.required_languages)
+    generator = StoryPackGenerator(config, FakeTTSEngine())
+    first = generator.generate(req)
+    manifest = load_manifest(first.manifest_path)
+    story = manifest["stories"][0]
+    expected = {"en", "zh", "ja", "ko", "de", "pt", "es"}
+    assert set(story["audio"]) == set(story["word_audio"]) == expected
+    for language in expected:
+        audio = story["audio"][language]
+        assert audio["reference_language"] == "en"
+        source = req.library.stories[0].texts[language]
+        assert [c["text"] for c in audio["chunks"]] == chunk_text(source, language, 60)
+        assert (first.pack_path / audio["path"]).is_file()
+        assert (first.pack_path / story["word_audio"][language]["path"]).is_file()
+    assert _word_synthesis_text("森", "ja") == "森。"
+    assert _word_synthesis_text("숲", "ko") == "숲."
+    assert _word_synthesis_text("Floresta", "pt") == "Floresta."
+    second = generator.generate(req)
+    assert second.generated_chunks == 0
+    assert second.cache_hits == first.generated_chunks
+    exported = export_pi_bundle(
+        [first.pack_path], project / "seven-language-bundle", allow_review_ready=True
+    )
+    assert exported.audio_count == 14

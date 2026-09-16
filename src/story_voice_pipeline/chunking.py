@@ -15,7 +15,13 @@ _SENTENCE_PATTERNS = {
     "de": re.compile(r".*?(?:[.!?]+(?:[\"'”’)]*)|$)(?:\s+|$)", re.DOTALL),
 }
 
-_SPACE_SEPARATED_LANGUAGES = {"en", "es", "fr", "de"}
+# Preserve existing languages' boundaries (and cache keys). Japanese punctuation
+# may directly follow a closing quote; Korean and Portuguese retain word spaces.
+_SENTENCE_PATTERNS["ja"] = re.compile(r".*?(?:[。！？!?]+[」』”’）)]*|$)", re.DOTALL)
+_SENTENCE_PATTERNS["ko"] = _SENTENCE_PATTERNS["en"]
+_SENTENCE_PATTERNS["pt"] = _SENTENCE_PATTERNS["en"]
+
+_SPACE_SEPARATED_LANGUAGES = {"en", "es", "fr", "de", "ko", "pt"}
 
 
 def _sentences(paragraph: str, language: str) -> list[str]:

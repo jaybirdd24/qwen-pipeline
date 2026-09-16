@@ -39,7 +39,7 @@ WORD_PADDING_MS = 50
 
 
 def _word_synthesis_text(text: str, language: str) -> str:
-    punctuation = "。" if language in {"zh"} else "."
+    punctuation = "。" if language in {"zh", "ja"} else "."
     return text.rstrip(".!?。！？") + punctuation
 
 

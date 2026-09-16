@@ -5,8 +5,11 @@ folder-based multilingual story library, clones a caregiver voice with the offic
 Qwen3-TTS Base model, caches generated chunks by their complete inputs, and writes review-ready
 WAV packs with reproducibility metadata.
 
-The included library contains seven short bilingual stories for development. Each story generates
-a full-story WAV and a separate card-word WAV in both languages, for 28 files in a complete pack.
+The included library contains seven short stories in English, Mandarin Chinese, Japanese,
+Korean, German, Portuguese, and Spanish. Each story generates a full-story WAV and a
+separate card-word WAV in each selected language: 98 files when all seven are selected.
+The added translations follow the current English text, including the short presentation
+message in `bear/en.txt`; Portuguese uses Brazilian wording.
 All audio should be reviewed before use as research study content.
 
 ## Requirements
@@ -45,8 +48,12 @@ run downloads it from Hugging Face unless that revision is already cached.
   `spoken_word` values, and trigger object IDs;
 - a non-empty UTF-8 `<language-code>.txt` for every language in `required_languages`.
 
-The pipeline accepts `en`, `zh`, `es`, `fr`, and `de`, corresponding to English, Mandarin
-Chinese, Spanish, French, and German.
+The pipeline supports English, Mandarin Chinese, Japanese, Korean, German,
+Portuguese, Spanish, and French (French translations are not bundled).
+Language codes are `en`, `zh`, `ja`, `ko`, `de`, `pt`, `es`, and `fr`.
+Japanese uses sentence boundaries without inserting spaces; Korean and Portuguese
+preserve word spaces. New output languages use the prepared English voice reference
+for cross-language cloning. Mandarin can still use its optional dedicated reference.
 
 Validate it with:
 
@@ -227,3 +234,7 @@ allocated bytes including model memory. CUDA is synchronized around measurements
 loading, prompt preparation, warmup and validation are excluded. Benchmark failures
 are reported without silently falling back, so a size that exceeds GPU memory is
 visible. Failed sizes produce exit code 2, and other sizes are still attempted.
+
+For three isolated full-service batch-4 trials on the T4, use the
+[batch-4 validation kit](validation/batch4/README.md). It includes a separate
+long-story library, a fresh-service launcher, and a log summary command.

@@ -26,3 +26,7 @@ Assuming the exported bundle was copied to `/var/lib/story-player`:
 selected WAV's SHA-256 before invoking `aplay`. The `select` command changes only
 `player-state.json`; voice packs remain immutable. The NFC state machine should invoke `play-word`
 when a card is scanned.
+
+Language arguments use the codes in the exported pack, including `en`, `zh`, `ja`,
+`ko`, `de`, `pt`, and `es` (and `fr` for libraries with French). Both story and word
+commands check that the selected language is present in the pack.

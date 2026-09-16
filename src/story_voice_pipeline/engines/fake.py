@@ -42,7 +42,7 @@ class FakeTTSEngine:
             f"{self.seed + seed_offset}:{language}:{text}:{max_new_tokens}".encode()
         ).digest()
         frequency = 180 + int.from_bytes(digest[:2], "big") % 260
-        chars_per_second = 5 if language == "zh" else 12
+        chars_per_second = 5 if language in {"zh", "ja", "ko"} else 12
         duration = max(0.6, min(8.0, len(text) / chars_per_second))
         times = np.arange(round(duration * self.sample_rate), dtype=np.float32) / self.sample_rate
         envelope = np.minimum(1.0, np.minimum(times * 20, (duration - times) * 20))

@@ -39,3 +39,30 @@ def test_spanish_uses_space_separated_sentence_chunking() -> None:
         "¿Otra frase completa?",
         "La última.",
     ]
+
+
+def test_japanese_quotes_and_unspaced_sentences() -> None:
+    text = "「こんにちは！」次の文です。最後です？"
+    assert chunk_text(text, "ja", maximum=10) == ["「こんにちは！」", "次の文です。", "最後です？"]
+    assert chunk_text(text, "ja", maximum=100) == [text]
+    long_text = "あいうえお" * 10
+    assert "".join(chunk_text(long_text, "ja", maximum=12)) == long_text
+    assert all(len(chunk) <= 12 for chunk in chunk_text(long_text, "ja", maximum=12))
+
+
+def test_korean_preserves_word_spaces_and_sentence_boundaries() -> None:
+    text = "작은 새가 노래해요. 아이가 웃어요! 함께 집에 가요."
+    chunks = chunk_text(text, "ko", maximum=15)
+    assert chunks == ["작은 새가 노래해요.", "아이가 웃어요!", "함께 집에 가요."]
+    assert " ".join(chunks) == text
+    assert chunk_text("작은 새가 나무 위에서 노래해요", "ko", maximum=9) == [
+        "작은 새가 나무",
+        "위에서 노래해요",
+    ]
+
+
+def test_portuguese_preserves_accents_and_word_spaces() -> None:
+    text = "A lua brilha. Que coração feliz! Vamos para casa."
+    chunks = chunk_text(text, "pt", maximum=20)
+    assert chunks == ["A lua brilha.", "Que coração feliz!", "Vamos para casa."]
+    assert " ".join(chunks) == text

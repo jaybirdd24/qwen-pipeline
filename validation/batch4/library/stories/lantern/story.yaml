@@ -1,0 +1,9 @@
+story_id: lantern
+version: 1
+title:
+  en: The Lantern Journey
+  zh: 灯笼之旅
+spoken_word:
+  en: Lantern
+  zh: 灯笼
+trigger_objects: [lantern]
