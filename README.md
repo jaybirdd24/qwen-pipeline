@@ -199,8 +199,15 @@ Set `QWEN_BATCH_SIZE=2` (or `4`), or pass `--qwen-batch-size 2` to
 On the production Nectar Tesla T4, **keep `QWEN_DTYPE=float32` and use
 `--dtype float32`**; batching does not change model precision.
 
-One loaded Qwen model processes lists of uncached story chunks, grouped within
-one story and output/reference language pair. Word clips retain their individual
+One loaded Qwen model processes uncached story chunks **across stories**. The job
+plans all story chunks and checks the cache before synthesis. Compatible chunks
+share output language, reference language and audio/transcript hashes, model/revision,
+dtype, and generation parameters. Request order determines group and chunk order;
+finished chunks are assembled back into their original stories without changing
+chunk boundaries. Four uncached one-chunk English stories can therefore use one
+batch of four. English, Spanish, and Japanese are always separate groups.
+Identical cache keys within the same job are synthesized once and reused at each
+story destination. Word clips retain their separate token limits and individual
 candidate retries. Failed batches split into smaller batches, down to individual
 chunks with the existing generation retries. Valid chunks are cached immediately;
 an irrecoverable chunk marks the run failed, and `--resume` reuses saved chunks.
@@ -213,6 +220,19 @@ metadata records batch ID, actual size, position, total wall time, and an equal
 share of that time as `generation_seconds`. `batch_finished` events in
 `jobs/<run-id>/logs/generation.jsonl` include failed attempts too; sum their
 `batch_wall_seconds` for total story inference time including fallback overhead.
+`batch_started` and `batch_finished` include configured/actual size, story IDs,
+chunk indices, language, and reference language. `batch_fallback` links the failed
+batch to its smaller retries via `parent_batch_id`; `chunks_planned` records initial
+cache hits and unique misses. Chunk completion events are emitted as soon as each
+validated chunk is cached and materialized, so service progress advances during synthesis.
+
+Manifest/request `timing` and the `run_completed`/`run_failed` log events report
+`story_batch_seconds` (all attempts, including failures), `word_generation_seconds`
+(including candidate preparation/retries), their sum as `generation_wall_seconds`,
+and `run_wall_seconds` (the pipeline call including planning and assembly, excluding
+model loading in the service). These job totals exclude historical inference time
+for cache hits. Per-chunk timings remain the original equal share of their successful
+batch, and cached chunks retain their historical metadata.
 
 Compare uncached sizes 1, 2, and 4 on the GPU:
 

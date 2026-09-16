@@ -104,6 +104,11 @@ class LocalJobProcessor:
                     raise JobCancellationRequested("Generation cancelled by user")
                 if event in {"run_started", "run_resumed"}:
                     job.status = "PREPARING_VOICE"
+                elif event == "batch_started":
+                    job.status = "GENERATING"
+                    job.current_story_id = fields["story_ids"][0]
+                    job.current_language = fields["language"]
+                    job.current_chunk = int(fields["chunk_indices"][0])
                 elif event in {"chunk_generated", "chunk_cache_hit"}:
                     job.status = "GENERATING"
                     job.completed_chunks += 1
