@@ -137,7 +137,7 @@ def test_control_service_full_fake_lifecycle(tmp_path: Path) -> None:
             json={
                 "voice_id": voice["id"],
                 "story_ids": ["forest"],
-                "languages": ["en", "zh"],
+                "languages": ["en"],
             },
         )
         assert created_job.status_code == 202, created_job.text
@@ -151,7 +151,7 @@ def test_control_service_full_fake_lifecycle(tmp_path: Path) -> None:
 
         pack = client.get(f"/api/v1/story-packs/{pack_id}").json()
         assert pack["status"] == "READY_FOR_REVIEW"
-        assert len(pack["audio"]) == 4
+        assert len(pack["audio"]) == 2
         assert {audio["audio_type"] for audio in pack["audio"]} == {"story", "word"}
         assert client.get(f"/packs/{pack_id}/review").status_code == 200
 
@@ -268,7 +268,7 @@ def test_failed_job_can_retry_after_reference_is_restored(tmp_path: Path) -> Non
             },
             files={"english_audio": ("reference.wav", reference, "audio/wav")},
         ).json()
-        normalized = data_root / "references" / voice["id"] / "v1" / "en.wav"
+        normalized = data_root / "references" / voice["id"] / "v1" / "en" / "reference.wav"
         normalized.unlink()
         response = client.post(
             "/api/v1/jobs",

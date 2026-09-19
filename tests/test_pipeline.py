@@ -653,3 +653,19 @@ def test_cancellation_at_batch_boundary_does_not_trigger_fallback(project: Path)
     logs = list((config.output_root / "jobs").glob("*/logs/generation.jsonl"))
     events = [json.loads(line) for line in logs[0].read_text().splitlines()]
     assert not any(e["event"] == "batch_fallback" for e in events)
+
+
+def test_language_reference_map_never_falls_back_to_english(project: Path) -> None:
+    from dataclasses import replace
+
+    from story_voice_pipeline.errors import PipelineError
+
+    original = request(project)
+    strict = replace(
+        original,
+        languages=("en", "es"),
+        references={"en": (original.reference_audio, original.reference_transcript)},
+    )
+    generator = StoryPackGenerator(PipelineConfig(output_root=project / "data"), FakeTTSEngine())
+    with pytest.raises(PipelineError, match="Missing language reference: es"):
+        generator.generate(strict)

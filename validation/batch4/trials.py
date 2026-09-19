@@ -78,7 +78,7 @@ def start(root: Path, trial: int) -> int:
     )
     print(f"Trial {trial}: http://127.0.0.1:8001", flush=True)
     print(
-        f"Upload your usual reference, generate ALL stories in BOTH languages once.\n"
+        f"Upload English and Mandarin references, generate ALL stories in BOTH languages once.\n"
         f"Stop with Ctrl-C after completion. Service log: {destination / 'service.log'}",
         flush=True,
     )

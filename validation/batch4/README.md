@@ -51,8 +51,8 @@ python validation/batch4/trials.py start --trial 3
 
 For each trial:
 
-1. Open `http://localhost:8001` on your Mac. Upload the same usual voice reference
-   and transcript (and the same Mandarin reference if normally used).
+1. Open `http://localhost:8001` on your Mac. Record the displayed English and Mandarin
+   passages, then reuse those same two recordings in every trial. Both references are required.
 2. Generate the lantern story in **both English and Mandarin**, once. Wait for
    the job to finish or fail. Do not submit another job or retry in that trial.
 3. Review the generated story and word audio in the UI before stopping the server.

@@ -30,10 +30,7 @@ class VoiceSnapshot:
     voice_id: str
     name: str
     version: int
-    english_path: Path
-    english_transcript: str
-    mandarin_path: Path | None
-    mandarin_transcript: str | None
+    references: dict[str, tuple[Path, str]]
 
 
 class LocalJobProcessor:
@@ -61,19 +58,14 @@ class LocalJobProcessor:
             voice = session.get(Voice, job.voice_id)
             if voice is None:
                 raise RuntimeError(f"Voice no longer exists: {job.voice_id}")
-            mandarin_path = (
-                self._data_path(voice.mandarin_reference_path)
-                if voice.mandarin_reference_path
-                else None
-            )
             snapshot = VoiceSnapshot(
                 voice_id=voice.id,
                 name=voice.name,
                 version=voice.voice_version,
-                english_path=self._data_path(voice.english_reference_path),
-                english_transcript=voice.english_reference_transcript,
-                mandarin_path=mandarin_path,
-                mandarin_transcript=voice.mandarin_reference_transcript,
+                references={
+                    ref.language_code: (self._data_path(ref.audio_path), ref.transcript)
+                    for ref in voice.references
+                },
             )
             return snapshot, json.loads(job.story_ids_json), json.loads(job.languages_json)
 
@@ -215,13 +207,10 @@ class LocalJobProcessor:
                 result = generator.generate(
                     GenerateRequest(
                         library=library,
-                        reference_audio=voice.english_path,
-                        reference_transcript=voice.english_transcript,
+                        references=voice.references,
                         voice_id=voice.voice_id,
                         voice_name=voice.name,
                         voice_version=voice.version,
-                        mandarin_reference_audio=voice.mandarin_path,
-                        mandarin_reference_transcript=voice.mandarin_transcript,
                         story_ids=tuple(story_ids),
                         languages=tuple(languages),
                         run_id=run_id,

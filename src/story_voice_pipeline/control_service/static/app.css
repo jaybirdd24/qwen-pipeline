@@ -63,3 +63,8 @@ code { overflow-wrap: anywhere; }
   header, .hero { align-items: flex-start; flex-direction: column; }
   header nav { flex-wrap: wrap; }
 }
+
+fieldset { min-width: 0; }
+input[type="file"] { max-width: 100%; }
+button:disabled { opacity: .55; cursor: wait; }
+.passage { padding: 1rem; background: var(--surface); border-radius: .4rem; }

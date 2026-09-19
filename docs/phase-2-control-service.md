@@ -27,8 +27,8 @@ Open <http://127.0.0.1:8000>. The workflow is:
 
 1. Optionally use **Prepare reference** to convert an audio file and exact transcript into a
    downloadable Qwen-ready WAV/text bundle.
-2. Add a consented English reference and exact transcript, with an optional Mandarin pair.
-3. Choose the voice, stories, and languages.
+2. Add a participant voice: choose two distinct languages and upload a recording of each displayed passage.
+3. Choose stories. The participant’s recorded languages are selected automatically.
 4. Start generation and monitor chunk progress.
 5. Listen to every generated file on the review page.
 6. Approve or reject the pack.
@@ -44,9 +44,25 @@ only languages for which the active story library has a complete translation. To
 `<code>.txt` to every story
 directory. An API request for an incomplete language is rejected before a GPU job starts.
 
-Languages other than Mandarin use the English cloning reference; cross-language accent and voice
-similarity can vary, so native-language reference support would require a future voice-schema
-migration.
+Every control-service job requires a reference in each requested language. Spanish generation
+requires a Spanish recording; there is no English fallback. If `languages` is omitted from a job
+request, all languages recorded for that voice are used. An explicit empty selection is rejected.
+
+Voices have any number of language references internally; the participant form requires exactly
+two. New recordings live under `references/<voice_id>/v1/<language>/reference.wav` and
+`reference.txt`. Each reference stores its language, transcript, duration, and normalized audio
+SHA-256 in `voice_references`. Startup adds this table and backfills existing English/Mandarin
+voices idempotently without moving files. Legacy columns and upload fields remain for compatibility.
+The standalone CLI retains its legacy cross-language cloning behavior; use the control service
+for participant study generation.
+
+Fixed passages for all supported languages are defined in
+`src/story_voice_pipeline/control_service/passages.py`. The server supplies the transcript;
+participants never type one. Review these passages before collecting study recordings. Stored
+transcripts are snapshots, so future passage edits do not alter existing voices.
+The upload check validates decoding and non-silent audio, reports duration warnings, and converts
+to mono 24 kHz WAV with the default configuration. It does not recognize speech or verify that the
+passage was read correctly. Phone formats that libsndfile cannot decode require FFmpeg.
 
 For real Qwen generation, use an environment containing compatible CUDA-enabled PyTorch and the
 project's `qwen` optional dependencies:
@@ -97,9 +113,25 @@ GET  /api/v1/voices
 GET  /api/v1/voices/{voice_id}
 ```
 
-Voice creation is `multipart/form-data`. Required fields are `name`, `english_audio`,
-`english_transcript`, and `consent_confirmed=true`. Mandarin audio and transcript are optional but
-must be supplied together.
+Voice creation is `multipart/form-data`: `name`, `consent_confirmed=true`, repeated `languages`
+fields, and matching repeated `audios` files in the same order. One or more distinct supported
+languages are accepted by the API. Transcripts come from the fixed passage catalog.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/voices \
+  -F 'name=Participant 04' -F 'consent_confirmed=true' \
+  -F 'languages=en' -F 'languages=es' \
+  -F 'audios=@english.m4a' -F 'audios=@spanish.m4a'
+```
+
+Responses include `languages` and a `references` object keyed by language. Voice detail also
+includes each stored transcript. For older clients, `english_audio`/`english_transcript` and optional
+`mandarin_audio`/`mandarin_transcript` are still accepted together. These cannot be mixed with the
+new repeated fields. They do not bypass the generation requirement for matching references.
+
+`POST /api/v1/references/validate` accepts `language` and `audio`, checks the recording, returns
+its duration and warnings, and removes temporary files. The participant form uses this endpoint
+before showing “Recording accepted”; creation independently validates both recordings again.
 
 ### Languages
 

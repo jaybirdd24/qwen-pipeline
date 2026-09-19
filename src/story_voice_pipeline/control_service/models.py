@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def now_utc() -> datetime:
@@ -23,14 +23,29 @@ class Voice(Base):
     name: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     voice_version: Mapped[int] = mapped_column(Integer, default=1)
-    english_reference_path: Mapped[str] = mapped_column(Text)
-    english_reference_transcript: Mapped[str] = mapped_column(Text)
-    english_reference_duration: Mapped[float] = mapped_column(Float)
+    english_reference_path: Mapped[str] = mapped_column(Text, default="")
+    english_reference_transcript: Mapped[str] = mapped_column(Text, default="")
+    english_reference_duration: Mapped[float] = mapped_column(Float, default=0)
     mandarin_reference_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     mandarin_reference_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     mandarin_reference_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     consent_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str] = mapped_column(Text, default="")
+
+    references: Mapped[list[VoiceReference]] = relationship(
+        cascade="all, delete-orphan", order_by="VoiceReference.language_code", lazy="selectin"
+    )
+
+
+class VoiceReference(Base):
+    __tablename__ = "voice_references"
+
+    voice_id: Mapped[str] = mapped_column(ForeignKey("voices.id"), primary_key=True)
+    language_code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    audio_path: Mapped[str] = mapped_column(Text)
+    transcript: Mapped[str] = mapped_column(Text)
+    audio_sha256: Mapped[str] = mapped_column(String(64))
+    duration_seconds: Mapped[float] = mapped_column(Float)
 
 
 class GenerationJob(Base):

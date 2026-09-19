@@ -10,7 +10,7 @@
       <form action="/jobs/new" method="post">
         <label>Voice
           <select name="voice_id" required>
-          {% for voice in voices %}<option value="{{ voice.id }}">{{ voice.name }}</option>{% endfor %}
+          {% for voice in voices %}<option value="{{ voice.id }}"{% if voice.id == selected_voice_id %} selected{% endif %}>{{ voice.name }}</option>{% endfor %}
           </select>
         </label>
         <fieldset>
@@ -21,13 +21,38 @@
         </fieldset>
         <fieldset>
           <legend>Languages</legend>
-          {% for language, name in language_names.items() %}
-            <label class="check"><input type="checkbox" name="language" value="{{ language }}"{% if language in library.required_languages %} checked{% else %} disabled{% endif %}> {{ name }}{% if language not in library.required_languages %} — translation not installed{% endif %}</label>
-          {% endfor %}
-          <p class="hint">A language becomes selectable when every story has its title, spoken word, and text translation in the active library.</p>
+          <div id="participant-languages" aria-live="polite"></div>
+          <p class="hint">All languages recorded for this participant are selected automatically.</p>
+          <p id="translation-warning" class="error" hidden></p>
         </fieldset>
         <button type="submit">Start generation</button>
       </form>
     {% endif %}
   </section>
+  {% if voices %}
+  <script>
+    const voiceLanguages = {{ voice_languages|tojson }};
+    const languageNames = {{ language_names|tojson }};
+    const available = {{ library.required_languages|list|tojson }};
+    const voiceSelect = document.querySelector('[name="voice_id"]');
+    function showLanguages() {
+      const codes = voiceLanguages[voiceSelect.value] || [];
+      const container = document.getElementById('participant-languages');
+      container.replaceChildren();
+      for (const code of codes) {
+        const row = document.createElement('p');
+        row.textContent = '✓ ' + languageNames[code];
+        container.append(row);
+      }
+      const missing = codes.filter(code => !available.includes(code));
+      const warning = document.getElementById('translation-warning');
+      warning.hidden = codes.length > 0 && missing.length === 0;
+      warning.textContent = !codes.length ? 'This voice has no recordings.' :
+        'Complete story translations are not installed for: ' + missing.map(code => languageNames[code]).join(', ');
+      document.querySelector('button[type="submit"]').disabled = !warning.hidden;
+    }
+    voiceSelect.addEventListener('change', showLanguages);
+    showLanguages();
+  </script>
+  {% endif %}
 {% endblock %}

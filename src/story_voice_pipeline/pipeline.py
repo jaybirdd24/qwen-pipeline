@@ -68,10 +68,10 @@ def _append_event(run_root: Path, event: str, **fields: Any) -> None:
 @dataclass(frozen=True)
 class GenerateRequest:
     library: StoryLibrary
-    reference_audio: Path
-    reference_transcript: str
     voice_id: str
     voice_name: str
+    reference_audio: Path | None = None
+    reference_transcript: str = ""
     voice_version: int = 1
     mandarin_reference_audio: Path | None = None
     mandarin_reference_transcript: str | None = None
@@ -79,6 +79,7 @@ class GenerateRequest:
     languages: tuple[str, ...] = ("en", "zh")
     run_id: str | None = None
     resume: bool = False
+    references: dict[str, tuple[Path, str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +198,27 @@ class StoryPackGenerator:
         reference_root = (
             self.config.output_root / "references" / request.voice_id / f"v{request.voice_version}"
         )
+        if request.references is not None:
+            missing = set(request.languages) - request.references.keys()
+            if missing:
+                raise PipelineError("Missing language reference: " + ", ".join(sorted(missing)))
+            references = {}
+            for language in request.languages:
+                source, transcript = request.references[language]
+                reference = normalize_reference(
+                    source,
+                    transcript,
+                    reference_root / language / "reference.wav",
+                    language,
+                    self.config.sample_rate,
+                )
+                (reference_root / language / "reference.txt").write_text(
+                    reference.transcript + "\n", encoding="utf-8"
+                )
+                references[language] = reference
+            return references
+        if request.reference_audio is None:
+            raise PipelineError("Supply language references or a legacy English reference")
         english = normalize_reference(
             request.reference_audio,
             request.reference_transcript,
@@ -401,7 +423,7 @@ class StoryPackGenerator:
         cached_by_key: dict[str, CacheResult | None] = {}
         for story in stories:
             for language in languages:
-                reference_language = "zh" if language == "zh" and "zh" in references else "en"
+                reference_language = language if language in references else "en"
                 reference = references[reference_language]
                 jobs = []
                 for index, text in enumerate(
@@ -768,7 +790,7 @@ class StoryPackGenerator:
                 audio_entries: dict[str, Any] = {}
                 word_audio_entries: dict[str, Any] = {}
                 for language in request.languages:
-                    reference_language = "zh" if language == "zh" and "zh" in references else "en"
+                    reference_language = language if language in references else "en"
                     reference = references[reference_language]
                     job_chunk_paths: list[Path] = []
                     chunk_metadata: list[dict[str, Any]] = []

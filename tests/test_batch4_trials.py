@@ -214,9 +214,13 @@ def test_real_service_logs_are_summarized_without_claiming_gpu_success(tmp_path)
             data={
                 "name": "Fixture",
                 "english_transcript": "Test reference.",
+                "mandarin_transcript": "中文参考。",
                 "consent_confirmed": "true",
             },
-            files={"english_audio": ("reference.wav", reference, "audio/wav")},
+            files={
+                "english_audio": ("reference.wav", reference, "audio/wav"),
+                "mandarin_audio": ("reference.wav", reference, "audio/wav"),
+            },
         )
         assert voice.status_code == 201, voice.text
         job = client.post(
