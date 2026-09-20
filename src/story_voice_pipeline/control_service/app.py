@@ -48,6 +48,7 @@ class JobCreate(BaseModel):
     voice_id: str
     story_ids: list[str] | None = None
     languages: list[str] | None = None
+    fallback_reference_language: str | None = None
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -107,6 +108,7 @@ def _job_json(job: GenerationJob) -> dict[str, Any]:
         "library_version": job.library_version,
         "story_ids": json.loads(job.story_ids_json),
         "languages": json.loads(job.languages_json),
+        "fallback_reference_language": job.fallback_reference_language,
         "status": job.status,
         "created_at": _iso(job.created_at),
         "started_at": _iso(job.started_at),
@@ -300,8 +302,14 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Story library has no complete translation for: " + ", ".join(unavailable),
             )
-        missing = set(languages) - {ref.language_code for ref in voice.references}
-        if missing:
+        reference_languages = {ref.language_code for ref in voice.references}
+        if (
+            payload.fallback_reference_language is not None
+            and payload.fallback_reference_language not in reference_languages
+        ):
+            raise HTTPException(422, "Fallback language must have a recorded reference")
+        missing = set(languages) - reference_languages
+        if missing and payload.fallback_reference_language is None:
             raise HTTPException(422, "Missing language reference: " + ", ".join(sorted(missing)))
         job_id = f"job_{uuid.uuid4().hex[:16]}"
         job = GenerationJob(
@@ -311,6 +319,7 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
             library_version=library.version,
             story_ids_json=json.dumps(stories),
             languages_json=json.dumps(languages),
+            fallback_reference_language=payload.fallback_reference_language,
             status="QUEUED",
             run_id=f"run_{uuid.uuid4().hex[:16]}",
         )
@@ -722,10 +731,14 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
     ):
         form = await request.form()
+        cross_language = form.get("cross_language") == "true"
         payload = JobCreate(
             voice_id=str(form.get("voice_id", "")),
             story_ids=[str(item) for item in form.getlist("story")],
-            languages=None,
+            languages=[str(item) for item in form.getlist("language")] if cross_language else None,
+            fallback_reference_language=(
+                str(form.get("fallback_reference_language", "")) if cross_language else None
+            ),
         )
         job = create_job_record(session, payload)
         background_tasks.add_task(processor.process, job.id)

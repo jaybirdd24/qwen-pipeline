@@ -44,9 +44,29 @@ only languages for which the active story library has a complete translation. To
 `<code>.txt` to every story
 directory. An API request for an incomplete language is rejected before a GPU job starts.
 
-Every control-service job requires a reference in each requested language. Spanish generation
-requires a Spanish recording; there is no English fallback. If `languages` is omitted from a job
-request, all languages recorded for that voice are used. An explicit empty selection is rejected.
+By default, control-service jobs require a reference in each requested language. Enable
+**cross-language generation** on the generation page to select additional output languages and
+choose a recorded language as the fallback. Matching recordings always take priority: an
+English/Spanish voice generating Spanish and Mandarin uses Spanish for Spanish and the chosen
+fallback for Mandarin. The fallback selector defaults to English when present, otherwise the
+voice's first recorded language. Available output languages still need complete story translations.
+
+For API jobs, explicitly set `fallback_reference_language` to a language recorded for the voice:
+
+```json
+{
+  "voice_id": "voice_example",
+  "story_ids": ["forest"],
+  "languages": ["en", "zh", "es"],
+  "fallback_reference_language": "en"
+}
+```
+
+Omitting the fallback keeps strict matching enabled. If `languages` is omitted, all languages
+recorded for the voice are used. An explicit empty selection is rejected. The fallback setting is
+saved with each job, returned by the job API, and retained on retries. Manifests and cache keys
+record the actual reference language and audio hash for both stories and word clips. Existing jobs
+migrate with no fallback selected.
 
 Voices have any number of language references internally; the participant form requires exactly
 two. New recordings live under `references/<voice_id>/v1/<language>/reference.wav` and
@@ -127,7 +147,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/voices \
 Responses include `languages` and a `references` object keyed by language. Voice detail also
 includes each stored transcript. For older clients, `english_audio`/`english_transcript` and optional
 `mandarin_audio`/`mandarin_transcript` are still accepted together. These cannot be mixed with the
-new repeated fields. They do not bypass the generation requirement for matching references.
+new repeated fields. The same explicit fallback setting is required for cross-language generation.
 
 `POST /api/v1/references/validate` accepts `language` and `audio`, checks the recording, returns
 its duration and warnings, and removes temporary files. The participant form uses this endpoint

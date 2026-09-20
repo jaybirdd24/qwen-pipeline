@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..hashing import sha256_file
@@ -20,6 +20,15 @@ class Database:
 
     def create_schema(self, data_root: Path | None = None) -> None:
         Base.metadata.create_all(self.engine)
+        columns = {column["name"] for column in inspect(self.engine).get_columns("generation_jobs")}
+        if "fallback_reference_language" not in columns:
+            with self.engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE generation_jobs ADD COLUMN "
+                        "fallback_reference_language VARCHAR(16)"
+                    )
+                )
         # Additive, repeatable migration: keep legacy columns for older clients.
         if data_root is None:
             return

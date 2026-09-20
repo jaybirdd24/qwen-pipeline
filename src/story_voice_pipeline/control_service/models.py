@@ -57,6 +57,7 @@ class GenerationJob(Base):
     library_version: Mapped[int] = mapped_column(Integer)
     story_ids_json: Mapped[str] = mapped_column(Text)
     languages_json: Mapped[str] = mapped_column(Text)
+    fallback_reference_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[str] = mapped_column(String(40), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

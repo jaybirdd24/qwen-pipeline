@@ -168,3 +168,130 @@ def test_existing_voice_migration_is_idempotent(tmp_path):
         assert references[0].transcript == "Original"
         assert references[0].audio_sha256 == hashlib.sha256(audio.read_bytes()).hexdigest()
     db.dispose()
+
+
+@pytest.mark.parametrize(
+    "codes,languages,fallback,expected",
+    [
+        (["en"], ["en", "zh"], "en", {"en": "en", "zh": "en"}),
+        (["es"], ["en", "zh"], "es", {"en": "es", "zh": "es"}),
+        (["en", "es"], ["es", "zh"], "en", {"es": "es", "zh": "en"}),
+    ],
+)
+def test_explicit_cross_language_generation(service, codes, languages, fallback, expected):
+    client, app, audio = service
+    voice = upload_voice(client, audio, codes).json()
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "voice_id": voice["id"],
+            "story_ids": ["forest"],
+            "languages": languages,
+            "fallback_reference_language": fallback,
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = client.get(f"/api/v1/jobs/{response.json()['id']}").json()
+    assert job["status"] == "READY_FOR_REVIEW", job
+    assert job["fallback_reference_language"] == fallback
+    assert "Cross-language generation enabled" in client.get(f"/jobs/{job['id']}").text
+    manifest = load_manifest(
+        app.state.settings.data_root / "packs" / job["pack_id"] / "manifest.json"
+    )
+    for group in ("audio", "word_audio"):
+        for language, reference_language in expected.items():
+            entry = manifest["stories"][0][group][language]
+            assert entry["reference_language"] == reference_language
+            assert (
+                entry["reference_audio_hash"]
+                == voice["references"][reference_language]["audio_sha256"]
+            )
+
+
+def test_cross_language_form_and_invalid_fallback(service):
+    client, _, audio = service
+    voice = upload_voice(client, audio, ["en"]).json()
+    rejected = client.post(
+        "/api/v1/jobs",
+        json={
+            "voice_id": voice["id"],
+            "languages": ["zh"],
+            "fallback_reference_language": "es",
+        },
+    )
+    assert rejected.status_code == 422
+    response = client.post(
+        "/jobs/new",
+        data={
+            "voice_id": voice["id"],
+            "story": "forest",
+            "language": ["en", "zh"],
+            "cross_language": "true",
+            "fallback_reference_language": "en",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text
+    job = client.get("/api/v1" + response.headers["location"]).json()
+    assert job["languages"] == ["en", "zh"]
+    assert job["status"] == "READY_FOR_REVIEW", job
+    assert job["fallback_reference_language"] == "en"
+
+
+def test_cross_language_setting_survives_retry(service):
+    client, app, audio = service
+    voice = upload_voice(client, audio, ["en"]).json()
+    path = app.state.settings.data_root / "references" / voice["id"] / "v1/en/reference.wav"
+    contents = path.read_bytes()
+    path.unlink()
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "voice_id": voice["id"],
+            "story_ids": ["forest"],
+            "languages": ["es"],
+            "fallback_reference_language": "en",
+        },
+    )
+    job_id = response.json()["id"]
+    assert client.get(f"/api/v1/jobs/{job_id}").json()["status"] == "FAILED"
+    path.write_bytes(contents)
+    assert client.post(f"/api/v1/jobs/{job_id}/retry").status_code == 202
+    job = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert job["status"] == "READY_FOR_REVIEW", job
+    assert job["fallback_reference_language"] == "en"
+
+
+def test_existing_jobs_migrate_without_enabling_fallback(tmp_path):
+    from sqlalchemy import text
+
+    from story_voice_pipeline.control_service.models import GenerationJob
+
+    db = Database(f"sqlite:///{tmp_path / 'old-jobs.db'}")
+    db.create_schema()
+    with db.sessions() as session:
+        session.add(Voice(id="old_voice", name="Old voice"))
+        session.add(
+            GenerationJob(
+                id="old_job",
+                voice_id="old_voice",
+                library_id="library",
+                library_version=1,
+                story_ids_json='["forest"]',
+                languages_json='["en"]',
+                status="QUEUED",
+                run_id="old_run",
+            )
+        )
+        session.commit()
+    with db.engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE generation_jobs DROP COLUMN fallback_reference_language")
+        )
+    db.create_schema()
+    db.create_schema()
+    with db.sessions() as session:
+        job = session.get(GenerationJob, "old_job")
+        assert job.status == "QUEUED"
+        assert job.fallback_reference_language is None
+    db.dispose()

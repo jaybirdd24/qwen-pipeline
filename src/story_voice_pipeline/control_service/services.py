@@ -31,6 +31,7 @@ class VoiceSnapshot:
     name: str
     version: int
     references: dict[str, tuple[Path, str]]
+    fallback_reference_language: str | None
 
 
 class LocalJobProcessor:
@@ -62,6 +63,7 @@ class LocalJobProcessor:
                 voice_id=voice.id,
                 name=voice.name,
                 version=voice.voice_version,
+                fallback_reference_language=job.fallback_reference_language,
                 references={
                     ref.language_code: (self._data_path(ref.audio_path), ref.transcript)
                     for ref in voice.references
@@ -208,6 +210,7 @@ class LocalJobProcessor:
                     GenerateRequest(
                         library=library,
                         references=voice.references,
+                        fallback_reference_language=voice.fallback_reference_language,
                         voice_id=voice.voice_id,
                         voice_name=voice.name,
                         voice_version=voice.version,

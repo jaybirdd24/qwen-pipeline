@@ -80,6 +80,7 @@ class GenerateRequest:
     run_id: str | None = None
     resume: bool = False
     references: dict[str, tuple[Path, str]] | None = None
+    fallback_reference_language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -200,10 +201,16 @@ class StoryPackGenerator:
         )
         if request.references is not None:
             missing = set(request.languages) - request.references.keys()
-            if missing:
+            fallback = request.fallback_reference_language
+            if fallback is not None and fallback not in request.references:
+                raise PipelineError("Fallback language must have a recorded reference")
+            if missing and fallback is None:
                 raise PipelineError("Missing language reference: " + ", ".join(sorted(missing)))
+            selected = set(request.languages) & request.references.keys()
+            if missing:
+                selected.add(fallback)
             references = {}
-            for language in request.languages:
+            for language in sorted(selected):
                 source, transcript = request.references[language]
                 reference = normalize_reference(
                     source,
@@ -417,13 +424,16 @@ class StoryPackGenerator:
         stories: tuple[Story, ...],
         languages: tuple[str, ...],
         references: dict[str, VoiceReference],
+        fallback_reference_language: str = "en",
     ) -> dict[tuple[str, str], list[PlannedChunk]]:
         """Resolve all cache entries before any story synthesis; keep original boundaries."""
         planned: dict[tuple[str, str], list[PlannedChunk]] = {}
         cached_by_key: dict[str, CacheResult | None] = {}
         for story in stories:
             for language in languages:
-                reference_language = language if language in references else "en"
+                reference_language = (
+                    language if language in references else fallback_reference_language
+                )
                 reference = references[reference_language]
                 jobs = []
                 for index, text in enumerate(
@@ -721,7 +731,13 @@ class StoryPackGenerator:
         staging_root.mkdir(parents=True, exist_ok=True)
 
         try:
-            planned = self._plan_story_chunks(run_root, stories, request.languages, references)
+            planned = self._plan_story_chunks(
+                run_root,
+                stories,
+                request.languages,
+                references,
+                request.fallback_reference_language or "en",
+            )
             targets: dict[str, list[PlannedChunk]] = {}
             groups: dict[str, list[PlannedChunk]] = {}
             cache_hits = 0
@@ -790,7 +806,11 @@ class StoryPackGenerator:
                 audio_entries: dict[str, Any] = {}
                 word_audio_entries: dict[str, Any] = {}
                 for language in request.languages:
-                    reference_language = language if language in references else "en"
+                    reference_language = (
+                        language
+                        if language in references
+                        else request.fallback_reference_language or "en"
+                    )
                     reference = references[reference_language]
                     job_chunk_paths: list[Path] = []
                     chunk_metadata: list[dict[str, Any]] = []

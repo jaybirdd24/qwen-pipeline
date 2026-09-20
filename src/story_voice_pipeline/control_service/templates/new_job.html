@@ -21,8 +21,12 @@
         </fieldset>
         <fieldset>
           <legend>Languages</legend>
+          <label class="check"><input id="cross-language" name="cross_language" type="checkbox" value="true"> Enable cross-language generation</label>
+          <label id="fallback-label" hidden>Reference for languages without a recording
+            <select name="fallback_reference_language" id="fallback-reference" disabled></select>
+          </label>
           <div id="participant-languages" aria-live="polite"></div>
-          <p class="hint">All languages recorded for this participant are selected automatically.</p>
+          <p class="hint">Recorded languages are selected automatically. Enable cross-language generation to choose additional languages. A matching recording always takes priority over the selected fallback.</p>
           <p id="translation-warning" class="error" hidden></p>
         </fieldset>
         <button type="submit">Start generation</button>
@@ -35,23 +39,48 @@
     const languageNames = {{ language_names|tojson }};
     const available = {{ library.required_languages|list|tojson }};
     const voiceSelect = document.querySelector('[name="voice_id"]');
-    function showLanguages() {
+    const crossLanguage = document.getElementById('cross-language');
+    const fallback = document.getElementById('fallback-reference');
+    function showLanguages(resetFallback = false) {
       const codes = voiceLanguages[voiceSelect.value] || [];
+      const previous = fallback.value;
+      fallback.replaceChildren();
+      for (const code of codes) fallback.add(new Option(languageNames[code], code));
+      fallback.value = !resetFallback && codes.includes(previous) ? previous :
+        codes.includes('en') ? 'en' : codes[0] || '';
+      fallback.disabled = !crossLanguage.checked;
+      document.getElementById('fallback-label').hidden = !crossLanguage.checked;
       const container = document.getElementById('participant-languages');
       container.replaceChildren();
-      for (const code of codes) {
-        const row = document.createElement('p');
-        row.textContent = '✓ ' + languageNames[code];
-        container.append(row);
+      if (crossLanguage.checked) {
+        for (const code of available) {
+          const row = document.createElement('label');
+          row.className = 'check';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.name = 'language';
+          checkbox.value = code;
+          checkbox.checked = codes.includes(code);
+          row.append(checkbox, document.createTextNode(languageNames[code] +
+            (codes.includes(code) ? ' — matching recording' : ' — uses selected fallback')));
+          container.append(row);
+        }
+      } else {
+        for (const code of codes) {
+          const row = document.createElement('p');
+          row.textContent = '✓ ' + languageNames[code];
+          container.append(row);
+        }
       }
       const missing = codes.filter(code => !available.includes(code));
       const warning = document.getElementById('translation-warning');
-      warning.hidden = codes.length > 0 && missing.length === 0;
+      warning.hidden = codes.length > 0 && (crossLanguage.checked || missing.length === 0);
       warning.textContent = !codes.length ? 'This voice has no recordings.' :
         'Complete story translations are not installed for: ' + missing.map(code => languageNames[code]).join(', ');
       document.querySelector('button[type="submit"]').disabled = !warning.hidden;
     }
-    voiceSelect.addEventListener('change', showLanguages);
+    voiceSelect.addEventListener('change', () => showLanguages(true));
+    crossLanguage.addEventListener('change', () => showLanguages());
     showLanguages();
   </script>
   {% endif %}

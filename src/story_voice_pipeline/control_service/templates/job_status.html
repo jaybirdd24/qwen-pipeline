@@ -4,6 +4,11 @@
   {% if job.status in ["QUEUED", "VALIDATING_REFERENCE", "PREPARING_VOICE", "GENERATING", "CANCELLING"] %}<meta http-equiv="refresh" content="3">{% endif %}
 {% endblock %}
 {% block content %}
+  {% if job.fallback_reference_language %}
+    <p class="notice">Cross-language generation enabled. Missing language recordings use the
+      {{ job.fallback_reference_language }} reference; matching recordings take priority.</p>
+  {% endif %}
+
   <section class="narrow">
     <p class="eyebrow">Generation job</p>
     <h1><code>{{ job.id }}</code></h1>
