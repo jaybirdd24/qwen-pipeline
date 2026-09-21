@@ -8,8 +8,8 @@ reproducibility metadata.
 The included library contains seven short stories in English, Mandarin Chinese, Japanese,
 Korean, German, Portuguese, and Spanish. Each story generates a full-story WAV and a
 separate card-word WAV in each selected language: 98 files when all seven are selected.
-The added translations follow the current English text, including the short presentation
-message in `bear/en.txt`; Portuguese uses Brazilian wording.
+Each language follows the same story, including Benny the bear sharing honey toast with his
+forest friends; Portuguese uses Brazilian wording.
 All audio should be reviewed before use as research study content.
 
 ## Simplest workflow: GPU → phone → Raspberry Pi
