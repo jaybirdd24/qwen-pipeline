@@ -11,6 +11,9 @@ LANGUAGE_NAMES = {
     "es": "Spanish",
     "fr": "French",
     "de": "German",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "pt": "Portuguese",
 }
 SUPPORTED_LANGUAGES = tuple(LANGUAGE_NAMES)
 
@@ -20,6 +23,9 @@ QWEN_LANGUAGE_NAMES = {
     "es": "Spanish",
     "fr": "French",
     "de": "German",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "pt": "Portuguese",
 }
 
 

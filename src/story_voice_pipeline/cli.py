@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import replace
@@ -33,8 +34,13 @@ def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION)
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--dtype", choices=("bfloat16", "float16", "float32"), default="bfloat16")
+    parser.add_argument(
+        "--dtype",
+        choices=("bfloat16", "float16", "float32"),
+        default=os.getenv("QWEN_DTYPE", "bfloat16"),
+    )
     parser.add_argument("--attention-implementation", default="sdpa")
+    parser.add_argument("--qwen-batch-size", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--max-generation-attempts", type=int, default=3)
@@ -73,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--output-dir", required=True, type=Path)
     _add_runtime_options(smoke)
 
+    benchmark = subparsers.add_parser("benchmark", help="Compare uncached Qwen batches 1, 2, 4")
+    benchmark.add_argument("--reference-audio", required=True, type=Path)
+    benchmark.add_argument("--reference-transcript-file", required=True, type=Path)
+    benchmark.add_argument("--text-file", required=True, type=Path)
+    benchmark.add_argument("--language", choices=SUPPORTED_LANGUAGES, default="en")
+    benchmark.add_argument("--max-chunk-characters", type=int, default=400)
+    benchmark.add_argument("--output-dir", required=True, type=Path)
+    _add_runtime_options(benchmark)
+
     export_pi = subparsers.add_parser(
         "export-pi", help="Export approved story packs as an offline Pi bundle"
     )
@@ -105,6 +120,8 @@ def _config_from_args(args: argparse.Namespace, output_root: Path) -> PipelineCo
     for optional in ("max_chunk_characters", "chunk_silence_ms", "peak_dbfs"):
         if hasattr(args, optional):
             changes[optional] = getattr(args, optional)
+    if args.qwen_batch_size is not None:
+        changes["qwen_batch_size"] = args.qwen_batch_size
     return replace(config, **changes)
 
 
@@ -220,6 +237,39 @@ def _smoke_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _benchmark_command(args: argparse.Namespace) -> int:
+    from .benchmark import benchmark_batches
+    from .chunking import chunk_text
+
+    config = _config_from_args(args, args.output_dir)
+    texts = chunk_text(
+        _read_text(args.text_file, "benchmark text"), args.language, config.max_chunk_characters
+    )
+    reference = normalize_reference(
+        args.reference_audio,
+        _read_text(args.reference_transcript_file, "reference transcript"),
+        args.output_dir / "reference.wav",
+        "en",
+        config.sample_rate,
+    )
+    engine = QwenTTSEngine(config)
+    engine.prepare_reference(reference)
+    rows = benchmark_batches(engine, texts, args.language, args.output_dir)
+    report = {
+        "created_at": utc_now(),
+        "parameters": config.generation_parameters(),
+        "runtime": engine.runtime_metadata(),
+        "results": rows,
+        "timing_scope": "generation and WAV writing; excludes warmup, loading and validation",
+    }
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "benchmark.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0 if all(row["status"] == "ok" for row in rows) else 2
+
+
 def _export_pi_command(args: argparse.Namespace) -> int:
     result = export_pi_bundle(
         args.pack,
@@ -250,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
             return _generate_command(args)
         if args.command == "smoke-test":
             return _smoke_command(args)
+        if args.command == "benchmark":
+            return _benchmark_command(args)
         if args.command == "export-pi":
             return _export_pi_command(args)
         raise PipelineError(f"Unknown command: {args.command}")

@@ -1,13 +1,20 @@
 story_id: dad
-version: 2
-
+version: 3
 title:
   en: Dad
   zh: 爸爸
-
+  ja: お父さん
+  ko: 아빠
+  de: Papa
+  pt: Papai
+  es: Papá
 spoken_word:
   en: Dad
   zh: 爸爸
-
+  ja: お父さん
+  ko: 아빠
+  de: Papa
+  pt: Papai
+  es: Papá
 trigger_objects:
-  - dad
+- dad

@@ -25,7 +25,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -37,7 +37,8 @@ from ..models import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
 from ..story_library import load_story_library
 from .config import ControlSettings
 from .database import Database
-from .models import GeneratedAudio, GenerationJob, StoryPack, Voice, now_utc
+from .models import GeneratedAudio, GenerationJob, StoryPack, Voice, VoiceReference, now_utc
+from .passages import RECORDING_PASSAGES
 from .services import LocalJobProcessor
 
 PACKAGE_ROOT = Path(__file__).parent
@@ -46,7 +47,8 @@ PACKAGE_ROOT = Path(__file__).parent
 class JobCreate(BaseModel):
     voice_id: str
     story_ids: list[str] | None = None
-    languages: list[str] = Field(default_factory=lambda: ["en", "zh"])
+    languages: list[str] | None = None
+    fallback_reference_language: str | None = None
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -68,6 +70,15 @@ def _voice_json(voice: Voice, include_private: bool = False) -> dict[str, Any]:
         "mandarin_reference_duration": voice.mandarin_reference_duration,
         "consent_confirmed": voice.consent_confirmed,
         "notes": voice.notes,
+        "languages": [ref.language_code for ref in voice.references],
+        "references": {
+            ref.language_code: {
+                "duration_seconds": ref.duration_seconds,
+                "audio_sha256": ref.audio_sha256,
+                **({"transcript": ref.transcript} if include_private else {}),
+            }
+            for ref in voice.references
+        },
     }
     if include_private:
         result.update(
@@ -97,6 +108,7 @@ def _job_json(job: GenerationJob) -> dict[str, Any]:
         "library_version": job.library_version,
         "story_ids": json.loads(job.story_ids_json),
         "languages": json.loads(job.languages_json),
+        "fallback_reference_language": job.fallback_reference_language,
         "status": job.status,
         "created_at": _iso(job.created_at),
         "started_at": _iso(job.started_at),
@@ -173,7 +185,7 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        database.create_schema()
+        database.create_schema(settings.data_root)
         yield
         database.dispose()
 
@@ -193,89 +205,65 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
     async def create_voice_record(
         session: Session,
         name: str,
-        english_audio: UploadFile,
-        english_transcript: str,
+        recordings: list[tuple[str, UploadFile, str]],
         consent_confirmed: bool,
-        notes: str,
-        mandarin_audio: UploadFile | None,
-        mandarin_transcript: str | None,
+        notes: str = "",
     ) -> Voice:
-        if mandarin_audio is not None and not mandarin_audio.filename:
-            await mandarin_audio.close()
-            mandarin_audio = None
-        if not name.strip():
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Voice name is required")
+        if not name.strip() or len(name.strip()) > 200:
+            raise HTTPException(422, "Voice name is required and must be at most 200 characters")
         if not consent_confirmed:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "Consent confirmation is required",
-            )
-        if not english_transcript.strip():
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "English reference transcript is required",
-            )
-        if (mandarin_audio is not None) != bool((mandarin_transcript or "").strip()):
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "Mandarin audio and transcript must be supplied together",
-            )
+            raise HTTPException(422, "Consent confirmation is required")
+        codes = [code for code, _, _ in recordings]
+        if not codes or len(codes) != len(set(codes)):
+            raise HTTPException(422, "Choose distinct reference languages")
+        if any(code not in SUPPORTED_LANGUAGES for code in codes):
+            raise HTTPException(422, "Invalid reference language")
         voice_id = f"voice_{uuid.uuid4().hex[:16]}"
         voice_root = settings.data_root / "references" / voice_id / "v1"
         upload_root = settings.data_root / "uploads" / voice_id
-        english_source = upload_root / f"english{Path(english_audio.filename or '').suffix.lower()}"
+        voice = Voice(id=voice_id, name=name.strip(), consent_confirmed=True, notes=notes.strip())
         try:
-            await _save_upload(english_audio, english_source, settings.max_upload_bytes)
-            english = normalize_reference(
-                english_source,
-                english_transcript,
-                voice_root / "en.wav",
-                "en",
-                settings.pipeline_config.sample_rate,
-            )
-            (voice_root / "en.txt").write_text(english.transcript + "\n", encoding="utf-8")
-            mandarin = None
-            if mandarin_audio is not None:
-                mandarin_source = upload_root / (
-                    f"mandarin{Path(mandarin_audio.filename or '').suffix.lower()}"
-                )
-                await _save_upload(mandarin_audio, mandarin_source, settings.max_upload_bytes)
-                mandarin = normalize_reference(
-                    mandarin_source,
-                    mandarin_transcript or "",
-                    voice_root / "zh.wav",
-                    "zh",
+            for code, upload, transcript in recordings:
+                source = upload_root / f"{code}{Path(upload.filename or '').suffix.lower()}"
+                await _save_upload(upload, source, settings.max_upload_bytes)
+                reference = normalize_reference(
+                    source,
+                    transcript,
+                    voice_root / code / "reference.wav",
+                    code,
                     settings.pipeline_config.sample_rate,
                 )
-                (voice_root / "zh.txt").write_text(mandarin.transcript + "\n", encoding="utf-8")
-        except PipelineError as exc:
+                (voice_root / code / "reference.txt").write_text(
+                    reference.transcript + "\n", encoding="utf-8"
+                )
+                stored = str(
+                    reference.audio_path.resolve().relative_to(settings.data_root.resolve())
+                )
+                voice.references.append(
+                    VoiceReference(
+                        language_code=code,
+                        audio_path=stored,
+                        transcript=reference.transcript,
+                        duration_seconds=reference.duration_seconds,
+                        audio_sha256=reference.audio_hash,
+                    )
+                )
+                # Compatibility fields for existing API clients and databases.
+                prefix = {"en": "english", "zh": "mandarin"}.get(code)
+                if prefix:
+                    setattr(voice, f"{prefix}_reference_path", stored)
+                    setattr(voice, f"{prefix}_reference_transcript", reference.transcript)
+                    setattr(voice, f"{prefix}_reference_duration", reference.duration_seconds)
+            session.add(voice)
+            session.commit()
+        except Exception as exc:
+            session.rollback()
             shutil.rmtree(voice_root.parent, ignore_errors=True)
-            shutil.rmtree(upload_root, ignore_errors=True)
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+            if isinstance(exc, PipelineError):
+                raise HTTPException(422, str(exc)) from exc
+            raise
         finally:
             shutil.rmtree(upload_root, ignore_errors=True)
-
-        voice = Voice(
-            id=voice_id,
-            name=name.strip(),
-            voice_version=1,
-            english_reference_path=str(
-                english.audio_path.resolve().relative_to(settings.data_root.resolve())
-            ),
-            english_reference_transcript=english.transcript,
-            english_reference_duration=english.duration_seconds,
-            mandarin_reference_path=(
-                str(mandarin.audio_path.resolve().relative_to(settings.data_root.resolve()))
-                if mandarin
-                else None
-            ),
-            mandarin_reference_transcript=mandarin.transcript if mandarin else None,
-            mandarin_reference_duration=mandarin.duration_seconds if mandarin else None,
-            consent_confirmed=True,
-            notes=notes.strip(),
-        )
-        session.add(voice)
-        session.commit()
         return voice
 
     def create_job_record(session: Session, payload: JobCreate) -> GenerationJob:
@@ -284,7 +272,16 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Voice not found")
         library = load_story_library(settings.story_library_path)
         available = {story.story_id for story in library.stories}
-        stories = payload.story_ids or [story.story_id for story in library.stories]
+        stories = (
+            payload.story_ids
+            if payload.story_ids is not None
+            else [story.story_id for story in library.stories]
+        )
+        languages = (
+            payload.languages
+            if payload.languages is not None
+            else [ref.language_code for ref in voice.references]
+        )
         if (
             not stories
             or len(stories) != len(set(stories))
@@ -292,19 +289,28 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
         ):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid story selection")
         if (
-            not payload.languages
-            or len(payload.languages) != len(set(payload.languages))
-            or any(language not in SUPPORTED_LANGUAGES for language in payload.languages)
+            not languages
+            or len(languages) != len(set(languages))
+            or any(language not in SUPPORTED_LANGUAGES for language in languages)
         ):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid language selection")
         unavailable = [
-            language for language in payload.languages if language not in library.required_languages
+            language for language in languages if language not in library.required_languages
         ]
         if unavailable:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Story library has no complete translation for: " + ", ".join(unavailable),
             )
+        reference_languages = {ref.language_code for ref in voice.references}
+        if (
+            payload.fallback_reference_language is not None
+            and payload.fallback_reference_language not in reference_languages
+        ):
+            raise HTTPException(422, "Fallback language must have a recorded reference")
+        missing = set(languages) - reference_languages
+        if missing and payload.fallback_reference_language is None:
+            raise HTTPException(422, "Missing language reference: " + ", ".join(sorted(missing)))
         job_id = f"job_{uuid.uuid4().hex[:16]}"
         job = GenerationJob(
             id=job_id,
@@ -312,7 +318,8 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
             library_id=library.library_id,
             library_version=library.version,
             story_ids_json=json.dumps(stories),
-            languages_json=json.dumps(payload.languages),
+            languages_json=json.dumps(languages),
+            fallback_reference_language=payload.fallback_reference_language,
             status="QUEUED",
             run_id=f"run_{uuid.uuid4().hex[:16]}",
         )
@@ -371,26 +378,68 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
 
     @app.post("/api/v1/voices", status_code=status.HTTP_201_CREATED)
     async def create_voice_api(
+        request: Request,
         session: Annotated[Session, Depends(get_session)],
-        name: Annotated[str, Form()],
-        english_audio: Annotated[UploadFile, File()],
-        english_transcript: Annotated[str, Form()],
-        consent_confirmed: Annotated[bool, Form()] = False,
-        notes: Annotated[str, Form()] = "",
-        mandarin_audio: Annotated[UploadFile | None, File()] = None,
-        mandarin_transcript: Annotated[str | None, Form()] = None,
     ) -> dict[str, Any]:
+        form = await request.form()
+        recordings = []
+        codes = form.getlist("languages")
+        audios = form.getlist("audios")
+        if codes or audios:
+            if any(
+                key in form
+                for key in (
+                    "english_audio",
+                    "english_transcript",
+                    "mandarin_audio",
+                    "mandarin_transcript",
+                )
+            ):
+                raise HTTPException(422, "Do not mix legacy and language-specific reference fields")
+            if len(codes) != len(audios):
+                raise HTTPException(422, "Supply one audio for each language")
+            for code, audio in zip(codes, audios, strict=True):
+                if code not in RECORDING_PASSAGES or not hasattr(audio, "read"):
+                    raise HTTPException(422, "Invalid language or recording")
+                recordings.append((str(code), audio, RECORDING_PASSAGES[code]))
+        else:
+            for code, prefix in (("en", "english"), ("zh", "mandarin")):
+                audio = form.get(f"{prefix}_audio")
+                transcript = str(form.get(f"{prefix}_transcript", "")).strip()
+                if bool(audio and getattr(audio, "filename", "")) != bool(transcript):
+                    raise HTTPException(422, "Audio and transcript must be supplied together")
+                if audio and getattr(audio, "filename", ""):
+                    recordings.append((code, audio, transcript))
         voice = await create_voice_record(
             session,
-            name,
-            english_audio,
-            english_transcript,
-            consent_confirmed,
-            notes,
-            mandarin_audio,
-            mandarin_transcript,
+            str(form.get("name", "")),
+            recordings,
+            str(form.get("consent_confirmed", "")).lower() in {"true", "1", "on"},
+            str(form.get("notes", "")),
         )
         return _voice_json(voice, include_private=True)
+
+    @app.post("/api/v1/references/validate")
+    async def validate_recording(
+        language: Annotated[str, Form()],
+        audio: Annotated[UploadFile, File()],
+    ):
+        if language not in RECORDING_PASSAGES:
+            raise HTTPException(422, "Invalid reference language")
+        work = settings.data_root / "uploads" / f"validation_{uuid.uuid4().hex}"
+        try:
+            source = work / f"source{Path(audio.filename or '').suffix.lower()}"
+            await _save_upload(audio, source, settings.max_upload_bytes)
+            reference = normalize_reference(
+                source,
+                RECORDING_PASSAGES[language],
+                work / "reference.wav",
+                language,
+                settings.pipeline_config.sample_rate,
+            )
+            return {"duration_seconds": reference.duration_seconds, "warnings": reference.warnings}
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
     @app.post("/api/v1/jobs", status_code=status.HTTP_202_ACCEPTED)
     def create_job_api(
@@ -557,12 +606,21 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
-            context={"voices": voices, "jobs": jobs, "packs": packs},
+            context={
+                "voices": voices,
+                "jobs": jobs,
+                "packs": packs,
+                "language_names": LANGUAGE_NAMES,
+            },
         )
 
     @app.get("/voices/new", response_class=HTMLResponse)
     def new_voice_page(request: Request):
-        return templates.TemplateResponse(request=request, name="new_voice.html", context={})
+        return templates.TemplateResponse(
+            request=request,
+            name="new_voice.html",
+            context={"languages": LANGUAGE_NAMES, "passages": RECORDING_PASSAGES},
+        )
 
     @app.get("/references/prepare", response_class=HTMLResponse)
     def prepare_reference_page(request: Request):
@@ -637,26 +695,16 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
 
     @app.post("/voices/new")
     async def new_voice_form(
+        request: Request,
         session: Annotated[Session, Depends(get_session)],
-        name: Annotated[str, Form()],
-        english_audio: Annotated[UploadFile, File()],
-        english_transcript: Annotated[str, Form()],
-        consent_confirmed: Annotated[bool, Form()] = False,
-        notes: Annotated[str, Form()] = "",
-        mandarin_audio: Annotated[UploadFile | None, File()] = None,
-        mandarin_transcript: Annotated[str | None, Form()] = None,
     ):
-        await create_voice_record(
-            session,
-            name,
-            english_audio,
-            english_transcript,
-            consent_confirmed,
-            notes,
-            mandarin_audio,
-            mandarin_transcript,
+        form = await request.form()
+        if len(form.getlist("languages")) != 2 or len(form.getlist("audios")) != 2:
+            raise HTTPException(422, "Supply recordings for two distinct languages")
+        voice = await create_voice_api(request, session)
+        return RedirectResponse(
+            f"/jobs/new?voice_id={voice['id']}", status_code=status.HTTP_303_SEE_OTHER
         )
-        return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/jobs/new", response_class=HTMLResponse)
     def new_job_page(request: Request, session: Annotated[Session, Depends(get_session)]):
@@ -669,6 +717,10 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
                 "voices": voices,
                 "library": library,
                 "language_names": LANGUAGE_NAMES,
+                "selected_voice_id": request.query_params.get("voice_id"),
+                "voice_languages": {
+                    voice.id: [ref.language_code for ref in voice.references] for voice in voices
+                },
             },
         )
 
@@ -679,10 +731,14 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
         session: Annotated[Session, Depends(get_session)],
     ):
         form = await request.form()
+        cross_language = form.get("cross_language") == "true"
         payload = JobCreate(
             voice_id=str(form.get("voice_id", "")),
             story_ids=[str(item) for item in form.getlist("story")],
-            languages=[str(item) for item in form.getlist("language")],
+            languages=[str(item) for item in form.getlist("language")] if cross_language else None,
+            fallback_reference_language=(
+                str(form.get("fallback_reference_language", "")) if cross_language else None
+            ),
         )
         job = create_job_record(session, payload)
         background_tasks.add_task(processor.process, job.id)

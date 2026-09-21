@@ -82,8 +82,25 @@ def test_control_service_full_fake_lifecycle(tmp_path: Path) -> None:
         assert client.get("/voices/new").status_code == 200
         assert client.get("/jobs/new").status_code == 200
         languages = client.get("/api/v1/languages").json()
-        assert [item["code"] for item in languages] == ["en", "zh", "es", "fr", "de"]
-        assert [item["code"] for item in languages if item["available"]] == ["en", "zh"]
+        assert [item["code"] for item in languages] == [
+            "en",
+            "zh",
+            "es",
+            "fr",
+            "de",
+            "ja",
+            "ko",
+            "pt",
+        ]
+        assert {item["code"] for item in languages if item["available"]} == {
+            "en",
+            "zh",
+            "ja",
+            "ko",
+            "de",
+            "pt",
+            "es",
+        }
 
         no_consent = client.post(
             "/api/v1/voices",
@@ -120,7 +137,7 @@ def test_control_service_full_fake_lifecycle(tmp_path: Path) -> None:
             json={
                 "voice_id": voice["id"],
                 "story_ids": ["forest"],
-                "languages": ["en", "zh"],
+                "languages": ["en"],
             },
         )
         assert created_job.status_code == 202, created_job.text
@@ -134,7 +151,7 @@ def test_control_service_full_fake_lifecycle(tmp_path: Path) -> None:
 
         pack = client.get(f"/api/v1/story-packs/{pack_id}").json()
         assert pack["status"] == "READY_FOR_REVIEW"
-        assert len(pack["audio"]) == 4
+        assert len(pack["audio"]) == 2
         assert {audio["audio_type"] for audio in pack["audio"]} == {"story", "word"}
         assert client.get(f"/packs/{pack_id}/review").status_code == 200
 
@@ -183,11 +200,11 @@ def test_job_rejects_language_without_complete_library_translation(tmp_path: Pat
         ).json()
         response = client.post(
             "/api/v1/jobs",
-            json={"voice_id": voice["id"], "story_ids": ["forest"], "languages": ["es"]},
+            json={"voice_id": voice["id"], "story_ids": ["forest"], "languages": ["fr"]},
         )
 
     assert response.status_code == 422
-    assert "no complete translation for: es" in response.json()["detail"]
+    assert "no complete translation for: fr" in response.json()["detail"]
 
 
 def test_pack_rejection_prevents_publication(tmp_path: Path) -> None:
@@ -251,7 +268,7 @@ def test_failed_job_can_retry_after_reference_is_restored(tmp_path: Path) -> Non
             },
             files={"english_audio": ("reference.wav", reference, "audio/wav")},
         ).json()
-        normalized = data_root / "references" / voice["id"] / "v1" / "en.wav"
+        normalized = data_root / "references" / voice["id"] / "v1" / "en" / "reference.wav"
         normalized.unlink()
         response = client.post(
             "/api/v1/jobs",

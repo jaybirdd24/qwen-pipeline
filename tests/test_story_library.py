@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from story_voice_pipeline.errors import LibraryValidationError
 from story_voice_pipeline.hashing import sha256_text
@@ -30,7 +31,9 @@ def test_loads_sample_library_and_stable_hashes() -> None:
         "house",
         "bear",
     ]
-    assert library.stories[0].spoken_word == {"en": "Forest", "zh": "森林"}
+    assert library.stories[0].spoken_word["en"] == "Forest"
+    assert library.stories[0].spoken_word["zh"] == "森林"
+    assert set(library.required_languages) == {"en", "zh", "ja", "ko", "de", "pt", "es"}
     assert library.stories[0].source_hashes["en"] == sha256_text(library.stories[0].texts["en"])
 
 
@@ -66,8 +69,8 @@ def test_rejects_story_id_that_does_not_match_directory(tmp_path: Path) -> None:
 def test_rejects_missing_spoken_word_translation(tmp_path: Path) -> None:
     manifest = copy_library(tmp_path)
     story_yaml = manifest.parent / "stories" / "forest" / "story.yaml"
-    story_yaml.write_text(
-        story_yaml.read_text().replace("  zh: 森林\n\ntrigger_objects", "\ntrigger_objects")
-    )
+    metadata = yaml.safe_load(story_yaml.read_text())
+    del metadata["spoken_word"]["zh"]
+    story_yaml.write_text(yaml.safe_dump(metadata, allow_unicode=True))
     with pytest.raises(LibraryValidationError, match="spoken_word"):
         load_story_library(manifest)

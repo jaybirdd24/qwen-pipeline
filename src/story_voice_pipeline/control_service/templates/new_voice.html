@@ -1,26 +1,100 @@
 {% extends "base.html" %}
-{% block title %}Add voice · Story Voice Pipeline{% endblock %}
+{% block title %}Create voice · Story Voice Pipeline{% endblock %}
 {% block content %}
-  <section class="narrow">
-    <p class="eyebrow">Step 1</p>
-    <h1>Add a caregiver voice</h1>
-    <p>Use only recordings you have permission to clone. The transcript must match the recording exactly.</p>
-    <form action="/voices/new" method="post" enctype="multipart/form-data">
-      <label>Voice name<input name="name" required maxlength="200"></label>
-      <fieldset>
-        <legend>English reference</legend>
-        <label>Audio<input name="english_audio" type="file" accept="audio/*,.wav,.m4a" required></label>
-        <label>Exact transcript<textarea name="english_transcript" rows="7" required></textarea></label>
-      </fieldset>
-      <fieldset>
-        <legend>Optional Mandarin reference</legend>
-        <label>Audio<input name="mandarin_audio" type="file" accept="audio/*,.wav,.m4a"></label>
-        <label>Exact transcript<textarea name="mandarin_transcript" rows="5"></textarea></label>
-        <p class="hint">If omitted, Mandarin generation uses the English reference and records the fallback.</p>
-      </fieldset>
-      <label>Notes<textarea name="notes" rows="3"></textarea></label>
-      <label class="check"><input name="consent_confirmed" type="checkbox" value="true" required> I confirm consent to store and clone this voice.</label>
-      <button type="submit">Save voice</button>
-    </form>
-  </section>
+<section class="narrow">
+  <p class="eyebrow">Step 1</p>
+  <h1>Add participant voice</h1>
+  <p>Read each passage exactly as shown, at a natural pace in a quiet room. Upload a recording from your phone (M4A, MP3 or WAV).</p>
+  <form id="voice-form" action="/voices/new" method="post" enctype="multipart/form-data">
+    <label>Participant / voice name<input name="name" required maxlength="200" placeholder="Participant 04"></label>
+    {% for ordinal, default in [('First', 'en'), ('Second', 'zh')] %}
+    <fieldset class="recording">
+      <legend>{{ ordinal }} language</legend>
+      <label>Language
+        <select name="languages" required>
+          {% for code, name in languages.items() %}<option value="{{ code }}"{% if code == default %} selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </label>
+      <div><strong>Read this:</strong><p class="passage" lang="{{ default }}">{{ passages[default] }}</p></div>
+      <label>Upload recording<input name="audios" type="file" accept="audio/*,.m4a,.mp3,.wav" required></label>
+      <p class="recording-status" role="status" aria-live="polite"></p>
+    </fieldset>
+    {% endfor %}
+    <label class="check"><input name="consent_confirmed" type="checkbox" value="true" required> I confirm consent to store and clone this voice.</label>
+    <p id="form-error" class="error" role="alert" hidden></p>
+    <button type="submit">Create voice</button>
+  </form>
+</section>
+<script>
+const passages = {{ passages|tojson }};
+const form = document.getElementById('voice-form');
+const error = document.getElementById('form-error');
+const sections = [...document.querySelectorAll('.recording')];
+const pending = new Set();
+let saving = false;
+function updateButton() { form.querySelector('button').disabled = saving || pending.size > 0; }
+function distinctLanguages() {
+  const duplicate = sections[0].querySelector('select').value === sections[1].querySelector('select').value;
+  sections[1].querySelector('select').setCustomValidity(duplicate ? 'Choose two different languages.' : '');
+}
+for (const section of sections) {
+  const select = section.querySelector('select');
+  const input = section.querySelector('input');
+  const status = section.querySelector('.recording-status');
+  let revision = 0;
+  select.addEventListener('change', () => {
+    revision++;
+    section.querySelector('.passage').textContent = passages[select.value];
+    section.querySelector('.passage').lang = select.value;
+    input.value = '';
+    input.setCustomValidity('');
+    status.textContent = '';
+    distinctLanguages();
+  });
+  input.addEventListener('change', async () => {
+    const current = ++revision;
+    input.setCustomValidity('');
+    if (!input.files.length) { status.textContent = ''; return; }
+    const operation = {};
+    pending.add(operation);
+    updateButton();
+    status.textContent = 'Checking recording…';
+    const data = new FormData();
+    data.append('language', select.value);
+    data.append('audio', input.files[0]);
+    try {
+      const response = await fetch('/api/v1/references/validate', {method: 'POST', body: data});
+      const result = await response.json();
+      if (current !== revision) return;
+      if (!response.ok) throw new Error(result.detail || 'Could not check this recording.');
+      status.textContent = '✓ Recording accepted. ' + result.warnings.join(' ');
+    } catch (failure) {
+      if (current !== revision) return;
+      status.textContent = failure.message;
+      input.setCustomValidity('Please upload a valid recording.');
+    } finally {
+      pending.delete(operation);
+      updateButton();
+    }
+  });
+}
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (saving || pending.size) return;
+  saving = true;
+  updateButton();
+  error.hidden = true;
+  try {
+    const response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+    if (response.ok && response.redirected) { window.location.assign(response.url); return; }
+    const result = await response.json();
+    throw new Error(typeof result.detail === 'string' ? result.detail : 'Please check both recordings and try again.');
+  } catch (failure) {
+    error.textContent = failure.message;
+    error.hidden = false;
+    saving = false;
+    updateButton();
+  }
+});
+</script>
 {% endblock %}

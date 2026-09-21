@@ -21,9 +21,11 @@
         <article class="card">
           <h3>{{ voice.name }}</h3>
           <p><code>{{ voice.id }}</code></p>
-          <p>English reference: {{ "%.1f"|format(voice.english_reference_duration) }} s</p>
-          {% if voice.english_reference_duration < 10 or voice.english_reference_duration > 40 %}<p class="notice">Reference is outside the preferred 10–40 second range.</p>{% endif %}
-          <p>Mandarin reference: {{ "yes" if voice.mandarin_reference_path else "English fallback" }}</p>
+          {% for ref in voice.references %}
+          <p>✓ {{ language_names[ref.language_code] }}: {{ "%.1f"|format(ref.duration_seconds) }} s</p>
+          {% if ref.duration_seconds < 10 or ref.duration_seconds > 40 %}<p class="notice">Reference is outside the preferred 10–40 second range.</p>{% endif %}
+          {% endfor %}
+          <a href="/jobs/new?voice_id={{ voice.id }}">Generate stories</a>
         </article>
       {% endfor %}
       </div>

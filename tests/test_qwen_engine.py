@@ -100,7 +100,14 @@ def test_qwen_accepts_word_token_limit_and_seed_offset(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("language", "qwen_language"),
-    [("es", "Spanish"), ("fr", "French"), ("de", "German")],
+    [
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("pt", "Portuguese"),
+    ],
 )
 def test_qwen_maps_control_language_codes(
     tmp_path: Path, language: str, qwen_language: str
@@ -110,3 +117,65 @@ def test_qwen_maps_control_language_codes(
     tts.generate("Text", language, "en", tmp_path / f"{language}.wav")
 
     assert tts._model.languages == [qwen_language]
+
+
+@pytest.mark.parametrize("size", [1, 2, 4])
+@pytest.mark.parametrize(
+    "language, qwen_language",
+    [
+        ("zh", "Chinese"),
+        ("en", "English"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("de", "German"),
+        ("pt", "Portuguese"),
+        ("es", "Spanish"),
+    ],
+)
+def test_qwen_batch_uses_one_call_and_preserves_order(
+    tmp_path: Path, size: int, language: str, qwen_language: str
+) -> None:
+    tts = engine(0)
+    calls = []
+    prompt = [object()]
+    tts._prompts = {"en": prompt}
+
+    class BatchModel:
+        def generate_voice_clone(self, **kwargs):
+            calls.append(kwargs)
+            texts = kwargs["text"]
+            count = len(texts) if isinstance(texts, list) else 1
+            return [np.full(100 + i * 10, 0.1, dtype=np.float32) for i in range(count)], 100
+
+    tts._model = BatchModel()
+    paths = [tmp_path / f"{i}.wav" for i in range(size)]
+    assert tts.generate_batch([f"Text {i}" for i in range(size)], language, "en", paths) >= 0
+    assert len(calls) == 1
+    assert calls[0]["voice_clone_prompt"] is prompt
+    assert calls[0]["language"] == ([qwen_language] * size if size > 1 else qwen_language)
+    assert calls[0]["text"] == ([f"Text {i}" for i in range(size)] if size > 1 else "Text 0")
+    assert [sf.info(path).frames for path in paths] == [100 + i * 10 for i in range(size)]
+
+
+@pytest.mark.parametrize("bad_result", ["count", "capped", "nan", "empty"])
+def test_qwen_batch_rejects_invalid_results(tmp_path: Path, bad_result: str) -> None:
+    tts = engine(0)
+
+    class BadModel:
+        def generate_voice_clone(self, **kwargs):
+            wavs = [np.full(100, 0.1), np.full(100, 0.2)]
+            if bad_result == "count":
+                wavs.pop()
+            elif bad_result == "capped":
+                wavs[1] = np.full(4792, 0.1)
+            elif bad_result == "nan":
+                wavs[1][0] = np.nan
+            else:
+                wavs[1] = np.array([])
+            return wavs, 100
+
+    tts._model = BadModel()
+    paths = [tmp_path / "a.wav", tmp_path / "b.wav"]
+    with pytest.raises(EngineError):
+        tts.generate_batch(["a", "b"], "en", "en", paths)
+    assert not any(path.exists() for path in paths)

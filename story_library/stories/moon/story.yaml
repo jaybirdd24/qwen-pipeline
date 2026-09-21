@@ -1,13 +1,20 @@
 story_id: moon
-version: 2
-
+version: 3
 title:
   en: Moon
   zh: 月亮
-
+  ja: 月
+  ko: 달
+  de: Mond
+  pt: Lua
+  es: Luna
 spoken_word:
   en: Moon
   zh: 月亮
-
+  ja: 月
+  ko: 달
+  de: Mond
+  pt: Lua
+  es: Luna
 trigger_objects:
-  - moon
+- moon

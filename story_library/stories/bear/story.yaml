@@ -1,13 +1,20 @@
 story_id: bear
-version: 2
-
+version: 3
 title:
   en: Bear
   zh: 小熊
-
+  ja: クマ
+  ko: 곰
+  de: Bär
+  pt: Urso
+  es: Oso
 spoken_word:
   en: Bear
   zh: 熊
-
+  ja: クマ
+  ko: 곰
+  de: Bär
+  pt: Urso
+  es: Oso
 trigger_objects:
-  - bear
+- bear

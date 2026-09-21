@@ -150,6 +150,71 @@ class QwenTTSEngine:
             return elapsed
         raise EngineError("Qwen generation attempts were exhausted")
 
+    def generate_batch(
+        self,
+        texts: list[str],
+        language: str,
+        reference_language: str,
+        outputs: list[Path],
+        *,
+        max_new_tokens: int | None = None,
+        seed_offset: int = 0,
+    ) -> float:
+        """Use one model call and the retained prompt; callers split failed batches."""
+        if not texts or len(texts) != len(outputs):
+            raise EngineError("Batch texts and outputs must have equal, nonzero length")
+        if len(texts) == 1:
+            return self.generate(
+                texts[0],
+                language,
+                reference_language,
+                outputs[0],
+                max_new_tokens=max_new_tokens,
+                seed_offset=seed_offset,
+            )
+        prompt = self._prompts.get(reference_language)
+        if prompt is None:
+            raise EngineError(f"Reference {reference_language} was not prepared")
+        if language not in QWEN_LANGUAGE_NAMES:
+            raise EngineError(f"Unsupported Qwen language: {language}")
+        limit = self.config.max_new_tokens if max_new_tokens is None else max_new_tokens
+        kwargs: dict[str, Any] = {"do_sample": True}
+        if limit is not None:
+            kwargs["max_new_tokens"] = limit
+        started = time.perf_counter()
+        self._torch.manual_seed(self.config.seed + seed_offset)
+        if self.config.device.startswith("cuda"):
+            self._torch.cuda.manual_seed_all(self.config.seed + seed_offset)
+        try:
+            wavs, sample_rate = self._model.generate_voice_clone(
+                text=texts,
+                language=[QWEN_LANGUAGE_NAMES[language]] * len(texts),
+                voice_clone_prompt=prompt,
+                non_streaming_mode=True,
+                **kwargs,
+            )
+        except Exception as exc:
+            # Release the failed call's tensors before the caller retries a smaller batch.
+            message = str(exc)
+        else:
+            message = None
+        if message is not None:
+            if self.config.device.startswith("cuda"):
+                self._torch.cuda.empty_cache()
+            raise EngineError(f"Qwen batch generation failed: {message}")
+        if len(wavs) != len(texts):
+            raise EngineError("Qwen batch returned an unexpected waveform count")
+        samples = [np.asarray(wav, dtype=np.float32) for wav in wavs]
+        for wav in samples:
+            if wav.ndim != 1 or not len(wav) or not np.isfinite(wav).all():
+                raise EngineError("Qwen batch returned an invalid waveform")
+            if _reached_generation_limit(len(wav), int(sample_rate), limit):
+                raise EngineError("Qwen batch reached the generation token limit")
+        for output, wav in zip(outputs, samples, strict=True):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(output, wav, int(sample_rate), subtype="PCM_16")
+        return time.perf_counter() - started
+
     def runtime_metadata(self) -> dict[str, object]:
         torch = self._torch
         result: dict[str, object] = {
