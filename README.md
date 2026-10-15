@@ -12,23 +12,23 @@ Each language follows the same story, including Benny the bear sharing honey toa
 forest friends; Portuguese uses Brazilian wording.
 All audio should be reviewed before use as research study content.
 
-## Simplest workflow: GPU → phone → Raspberry Pi
+## Simplest workflow: GPU → Mac → Raspberry Pi
 
-**Generate and approve on the GPU server, export a bundle, copy it through your Mac to the Pi,
+**Generate and approve through a browser on your Mac, export a bundle, copy it to the Pi,
 then play it locally. Downloads to the Pi are not automatic.** Once the files are on the Pi,
-playback works offline; the phone, Mac, and GPU can disconnect.
+playback works offline; the Mac and GPU can disconnect.
 
-These instructions use the existing GPU server at `ubuntu@130.216.216.156`, its service on
-port **8000**, and your Mac's forwarded port **8001**. Replace `RPI_USER@RPI_HOST` below with
-your Pi's SSH login, for example `jaybird@raspberrypi.local`. Replace `pack_REPLACE_ME` with
-the pack ID shown on the review page.
+These instructions use placeholders for private connection details. Replace `GPU_USER@GPU_HOST`
+with your GPU server's SSH login, and use the appropriate private-key path in place of
+`~/.ssh/gpu_key`. Replace `RPI_USER@RPI_HOST` with your Pi's SSH login and `pack_REPLACE_ME`
+with the pack ID shown on the review page.
 
 ### 1. Check or start the GPU service
 
 **On your Mac**, connect to the GPU server:
 
 ```bash
-ssh -i ~/.ssh/nectar_gpu ubuntu@130.216.216.156
+ssh -i ~/.ssh/gpu_key GPU_USER@GPU_HOST
 ```
 
 **In that GPU terminal**, check whether the service is already running:
@@ -54,26 +54,22 @@ story-control-service
 
 This uses the server's existing Qwen/CUDA environment. Keep this terminal open while generating.
 Use another SSH terminal for the export commands later. If SSH needs the key unlocked, run
-`ssh-add ~/.ssh/nectar_gpu` on your Mac and enter its passphrase there.
+`ssh-add ~/.ssh/gpu_key` on your Mac and enter its passphrase there.
 
-### 2. Open the website on your Mac or phone
+### 2. Open the website securely on your Mac
 
 **In a separate Mac terminal**, open the tunnel and leave it running:
 
 ```bash
-ssh -N -o ExitOnForwardFailure=yes -i ~/.ssh/nectar_gpu \
-  -L 0.0.0.0:8001:127.0.0.1:8000 ubuntu@130.216.216.156
+ssh -N -o ExitOnForwardFailure=yes -i ~/.ssh/gpu_key \
+  -L 127.0.0.1:8001:127.0.0.1:8000 GPU_USER@GPU_HOST
 ```
 
-- **Mac:** open <http://localhost:8001>.
-- **Phone:** join the same Wi-Fi as the Mac. Find the Mac's Wi-Fi IP in
-  **System Settings → Wi-Fi → Details → TCP/IP**, then open
-  `http://MAC_WIFI_IP:8001`, for example `http://192.168.1.42:8001`.
-
-The phone connects to the **Mac's address**, not `localhost` or the GPU's address. Keep the Mac
-awake. Use trusted Wi-Fi: the forwarded website has no login. If the tunnel says the port is in
-use, close the previous tunnel or local service on port 8001. If only the phone cannot connect,
-check the Mac firewall and whether the Wi-Fi blocks communication between devices.
+Open <http://localhost:8001> and keep the Mac awake while using the site. The tunnel binds only
+to the Mac's loopback interface because the service does not provide application authentication.
+Do not make the tunnel listen on every network interface to enable phone or LAN access. If
+remote-device access is required, first place the service behind an authenticated, TLS-protected
+proxy or private VPN and restrict access with firewall rules.
 
 ### 3. Create a voice, generate, and approve
 
@@ -90,7 +86,7 @@ In the browser:
 3. Click **Start generation**. Wait for **READY_FOR_REVIEW**, then open the review page.
 4. Listen to every story and word clip and click **Approve pack**. Copy the `pack_…` ID shown there.
 
-Generation continues on the server if you close the phone page. Keep the server process running.
+Generation continues on the server if you close the browser page. Keep the server process running.
 Seven stories in two languages produce **28 WAV files**: one story and one word clip per language.
 An upload marked “Recording accepted” confirms usable audio, not that the passage was read correctly.
 
@@ -122,8 +118,8 @@ one-click Pi-bundle download in the browser; use `export-pi` and the transfers b
 ```bash
 PACK_ID=pack_REPLACE_ME
 mkdir -p "$HOME/Downloads"
-scp -i ~/.ssh/nectar_gpu -r \
-  "ubuntu@130.216.216.156:/home/ubuntu/qwen-pipeline/data/pi-exports/$PACK_ID" \
+scp -i ~/.ssh/gpu_key -r \
+  "GPU_USER@GPU_HOST:qwen-pipeline/data/pi-exports/$PACK_ID" \
   "$HOME/Downloads/"
 
 ssh RPI_USER@RPI_HOST 'mkdir -p ~/story-bundles'
@@ -133,7 +129,7 @@ scp -r "$HOME/Downloads/$PACK_ID" RPI_USER@RPI_HOST:~/story-bundles/
 For the **first setup**, also copy the standalone player source from your Mac checkout:
 
 ```bash
-cd /Users/jaybird/p4p/qwen-pipeline
+cd /path/to/qwen-pipeline
 scp -r pi/story-player RPI_USER@RPI_HOST:~/
 ```
 
