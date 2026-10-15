@@ -37,7 +37,7 @@ usual consent field in the UI yourself.
 On your Mac, forward the isolated service port using your existing GPU SSH target:
 
 ```bash
-ssh -i ~/.ssh/nectar_gpu -L 8001:127.0.0.1:8001 ubuntu@130.216.216.156
+ssh -i ~/.ssh/gpu_key -L 127.0.0.1:8001:127.0.0.1:8001 GPU_USER@GPU_HOST
 ```
 
 On the GPU server, run these **one at a time**, completing and stopping each

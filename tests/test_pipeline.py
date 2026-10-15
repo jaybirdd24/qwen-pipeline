@@ -98,7 +98,7 @@ def test_fake_pipeline_generates_bilingual_pack_and_reuses_cache(project: Path) 
     assert all(set(story["word_audio"]) == {"en", "zh"} for story in manifest["stories"])
     assert manifest["stories"][0]["word_audio"]["en"]["source_text"] == "Forest"
     dog = next(story for story in manifest["stories"] if story["story_id"] == "dog")
-    assert dog["word_audio"]["zh"]["source_text"] == "狗"
+    assert dog["word_audio"]["zh"]["source_text"] == "小狗"
     assert (first.pack_path / "forest/word/en.wav").is_file()
     assert first.generated_chunks > 0
     assert first.cache_hits == 0

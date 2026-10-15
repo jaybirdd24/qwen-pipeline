@@ -14,7 +14,7 @@ spoken_word:
   ja: クマ
   ko: 곰
   de: Bär
-  pt: Urso
+  pt: urso
   es: Oso
 trigger_objects:
 - bear
